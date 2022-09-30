@@ -1,0 +1,83 @@
+// Copyright 2022 Cockroach Labs Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Package database defines the interface to the database.
+package database
+
+import (
+	"context"
+	"time"
+
+	"github.com/cockroachlabs/visus/internal/config"
+	"github.com/jackc/pgconn"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
+	log "github.com/sirupsen/logrus"
+)
+
+// PgxPool defines the methods to access the database.
+type PgxPool interface {
+	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
+	QueryFunc(ctx context.Context, sql string, args []interface{}, scans []interface{}, f func(pgx.QueryFuncRow) error) (pgconn.CommandTag, error)
+	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
+	Begin(ctx context.Context) (pgx.Tx, error)
+	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+	BeginFunc(ctx context.Context, f func(pgx.Tx) error) error
+	BeginTxFunc(ctx context.Context, txOptions pgx.TxOptions, f func(pgx.Tx) error) error
+}
+
+// New creates a new connection pool to the database.
+func New(ctx context.Context, cfg *config.Config) (PgxPool, error) {
+	var pool *pgxpool.Pool
+	sleepTime := int64(5)
+	for {
+		poolConfig, err := pgxpool.ParseConfig(cfg.URL)
+		if err != nil {
+			log.Error(err)
+			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
+			err := sleep(ctx, sleepTime)
+			if err != nil {
+				return nil, err
+			}
+			//time.Sleep(time.Duration(sleep * int(time.Second)))
+		} else {
+			pool, err = pgxpool.ConnectConfig(ctx, poolConfig)
+			if err != nil {
+				log.Error(err)
+				log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
+				err := sleep(ctx, sleepTime)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				break
+			}
+		}
+		if sleepTime < int64(60) {
+			sleepTime += int64(5)
+		}
+	}
+	return pool, nil
+}
+
+func sleep(ctx context.Context, seconds int64) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(time.Duration(seconds) * time.Second):
+		return nil
+	}
+}
