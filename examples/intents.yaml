@@ -1,17 +1,13 @@
-name: intents
+name: intent
 frequency: 10
 maxresults: 100
 labels: [table_name]
 metrics:
-  - name : intent_count
+  - name : count
     kind : counter
     help : number of intents.
 query: 
-<<<<<<< HEAD
   SELECT table_name, intent_count
-=======
-  SELECT name, intent_count
->>>>>>> 3771d12 (reading config from database)
   FROM (
           SELECT name as table_name,
                  sum(

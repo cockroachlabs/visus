@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/cockroachlabs/visus/internal/cmd/collection"
+	"github.com/cockroachlabs/visus/internal/cmd/histogram"
 	"github.com/cockroachlabs/visus/internal/cmd/server"
 	joonix "github.com/joonix/log"
 	"github.com/pkg/errors"
@@ -91,6 +92,7 @@ func main() {
 
 	root.AddCommand(server.Command())
 	root.AddCommand(collection.Command())
+	root.AddCommand(histogram.Command())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

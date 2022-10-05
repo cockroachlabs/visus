@@ -1,0 +1,24 @@
+
+name: index
+frequency: 60
+maxresults: 100
+labels: [table_name, index_name]
+metrics:
+  - name : total_reads
+    kind : counter
+    help : number of index reads.
+query: 
+  SELECT 
+    t.name as table_name, index_name, total_reads::float
+  FROM 
+    crdb_internal.index_usage_statistics s, 
+    crdb_internal.tables t ,
+    crdb_internal.table_indexes i
+  WHERE 
+    s.table_id = t.table_id  AND
+    s.table_id = i.descriptor_id AND
+    s.index_id = i.index_id
+  ORDER BY 
+    total_reads asc
+  LIMIT $1
+  
