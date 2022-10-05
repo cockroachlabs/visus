@@ -16,16 +16,16 @@
 package server
 
 import (
-	"github.com/cockroachlabs/visus/internal/config"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/http"
 	"github.com/cockroachlabs/visus/internal/metric"
+	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/spf13/cobra"
 )
 
 // Command runs the server.
 func Command() *cobra.Command {
-	cfg := &config.Config{}
+	cfg := &server.Config{}
 	c := &cobra.Command{
 		Use:  "start",
 		Args: cobra.NoArgs,
@@ -44,14 +44,12 @@ func Command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pool, err := database.New(ctx, cfg)
+			pool, err := database.New(ctx, cfg.URL)
 			if err != nil {
 				return err
 			}
-			metricServer, err := metric.New(ctx, cfg, pool)
-			if err != nil {
-				return err
-			}
+
+			metricServer := metric.New(ctx, cfg, pool)
 			err = metricServer.Start(ctx)
 			if err != nil {
 				return err

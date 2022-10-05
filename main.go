@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachlabs/visus/internal/cmd/collection"
 	"github.com/cockroachlabs/visus/internal/cmd/server"
 	joonix "github.com/joonix/log"
 	"github.com/pkg/errors"
@@ -89,6 +90,7 @@ func main() {
 	f.CountVarP(&verbosity, "verbose", "v", "increase logging verbosity to debug; repeat for trace")
 
 	root.AddCommand(server.Command())
+	root.AddCommand(collection.Command())
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer cancel()

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package metric retrieves metric values on a schedule.
 package metric
 
 import (
@@ -19,9 +20,9 @@ import (
 	"time"
 
 	"github.com/cockroachlabs/visus/internal/collector"
-	"github.com/cockroachlabs/visus/internal/config"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/server"
+	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
 	log "github.com/sirupsen/logrus"
 )
@@ -39,47 +40,87 @@ type metricsServer struct {
 }
 
 // New creates a new server to collect the metrics.
-func New(ctx context.Context, cfg *config.Config, pool database.PgxPool) (server.Server, error) {
+func New(ctx context.Context, cfg *server.Config, pool database.PgxPool) server.Server {
 	server := &metricsServer{
 		pool:          pool,
 		scheduler:     gocron.NewScheduler(time.UTC),
 		scheduledJobs: make(map[string]*scheduledJob),
 	}
-	server.AddDefaultCollectors()
-	return server, nil
+	return server
 }
 
-func (s *metricsServer) AddCollector(coll collector.Collector) {
-	s.scheduledJobs[coll.String()] = &scheduledJob{
+// addJob add a new collector to the scheduler.
+func (m *metricsServer) addJob(name string, coll collector.Collector, job *gocron.Job) {
+	m.scheduledJobs[name] = &scheduledJob{
 		collector: coll,
+		job:       job,
 	}
 }
 
-func (s *metricsServer) AddDefaultCollectors() {
-	for _, coll := range collector.GetDefaultCollectors(s.pool) {
-		s.AddCollector(coll)
+// scheduleCollectors schedules all the collectors based on the
+// configuration stored in the database.
+func (m *metricsServer) scheduleCollectors(ctx context.Context) error {
+	newCollectors := make(map[string]bool)
+	names, err := store.GetCollectionNames(ctx, m.pool)
+	if err != nil {
+		return err
 	}
-}
-
-func (s *metricsServer) Start(ctx context.Context) error {
-	for _, scheduledJob := range s.scheduledJobs {
-		job, err := s.scheduler.Every(scheduledJob.collector.GetFrequency()).Second().
-			Do(func(coll collector.Collector) {
-				err := coll.Collect(ctx)
+	for _, name := range names {
+		coll, err := store.GetCollection(ctx, m.pool, name)
+		if err != nil {
+			log.Errorf("Unable to find %s: %s", name, err.Error())
+			continue
+		}
+		newCollectors[name] = true
+		existing, found := m.scheduledJobs[coll.Name]
+		if found && !existing.collector.GetLastModified().Before(coll.LastModified.Time) {
+			log.Debugf("Already scheduled %s, no change", coll.Name)
+			continue
+		}
+		if found {
+			log.Debugf("Already scheduled %s, removing", coll.Name)
+			m.scheduler.RemoveByReference(existing.job)
+		}
+		collctr := collector.FromCollection(coll, m.pool)
+		log.Infof("Scheduling %s every %d seconds", collctr.String(), collctr.GetFrequency())
+		job, err := m.scheduler.Every(collctr.GetFrequency()).Second().
+			Do(func(collctr collector.Collector) {
+				log.Infof("Running collector %s", collctr.String())
+				err := collctr.Collect(ctx)
 				if err != nil {
-					log.Errorf("collector %s: %s", coll, err.Error())
+					log.Errorf("collector %s: %s", collctr, err.Error())
 				}
-			}, scheduledJob.collector)
+			}, collctr)
 		if err != nil {
 			return err
 		}
-		scheduledJob.job = job
+		m.addJob(coll.Name, collctr, job)
 	}
-	s.scheduler.StartAsync()
+	// remove all the schedule jobs that have been deleted from the database.
+	for key, value := range m.scheduledJobs {
+		if _, ok := newCollectors[key]; !ok {
+			log.Infof("Removing %s", key)
+			m.scheduler.RemoveByReference(value.job)
+			value.collector.Unregister()
+			delete(m.scheduledJobs, key)
+		}
+	}
 	return nil
 }
-func (s *metricsServer) Shutdown(ctx context.Context) error {
-	s.scheduler.Stop()
-	s.scheduler.Clear()
+
+// Start schedules all the collectors.
+func (m *metricsServer) Start(ctx context.Context) error {
+	m.scheduler.Every(1).Minute().
+		Do(func() {
+			m.scheduleCollectors(ctx)
+		})
+	m.scheduler.StartAsync()
+	return nil
+}
+
+// Shutdown gracefully stops all the collectors.
+func (m *metricsServer) Shutdown(ctx context.Context) error {
+	m.scheduler.Stop()
+	m.scheduler.Clear()
 	return nil
 }

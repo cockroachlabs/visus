@@ -76,8 +76,8 @@ func TestCollector_Collect(t *testing.T) {
 	require.NoError(t, err)
 	coll := New("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).
 		WithMaxResults(maxResults).
-		AddCounter("crdb_counter", "counter").
-		AddGauge("crdb_gauge", "gauge")
+		AddCounter("counter", "counter").
+		AddGauge("gauge", "gauge")
 	collector := coll.(*collector)
 	collector.maybeInitCache()
 	require.Equal(t, 8, collector.metricsCache.MaxEntries)
@@ -90,8 +90,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test2", 1, 5},
 			},
 			map[string][]string{
-				"crdb_counter": {"label test1 1.000000", "label test2 1.000000"},
-				"crdb_gauge":   {"label test1 1.000000", "label test2 5.000000"},
+				"counter": {"label test1 1.000000", "label test2 1.000000"},
+				"gauge":   {"label test1 1.000000", "label test2 5.000000"},
 			},
 			4,
 		},
@@ -102,8 +102,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test2", 1, 1},
 			},
 			map[string][]string{
-				"crdb_counter": {"label test1 1.000000", "label test2 1.000000"},
-				"crdb_gauge":   {"label test1 3.000000", "label test2 1.000000"},
+				"counter": {"label test1 1.000000", "label test2 1.000000"},
+				"gauge":   {"label test1 3.000000", "label test2 1.000000"},
 			},
 			4,
 		},
@@ -114,8 +114,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test2", 2, 1},
 			},
 			map[string][]string{
-				"crdb_counter": {"label test1 4.000000", "label test2 2.000000"},
-				"crdb_gauge":   {"label test1 1.000000", "label test2 1.000000"},
+				"counter": {"label test1 4.000000", "label test2 2.000000"},
+				"gauge":   {"label test1 1.000000", "label test2 1.000000"},
 			},
 			4,
 		},
@@ -126,8 +126,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test3", 2, 1},
 			},
 			map[string][]string{
-				"crdb_counter": {"label test1 6.000000", "label test2 2.000000", "label test3 2.000000"},
-				"crdb_gauge":   {"label test1 1.000000", "label test2 1.000000", "label test3 1.000000"},
+				"counter": {"label test1 6.000000", "label test2 2.000000", "label test3 2.000000"},
+				"gauge":   {"label test1 1.000000", "label test2 1.000000", "label test3 1.000000"},
 			},
 			6,
 		},
@@ -138,8 +138,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test4", 2, 1},
 			},
 			map[string][]string{
-				"crdb_counter": {"label test1 6.000000", "label test2 2.000000", "label test3 2.000000", "label test4 2.000000"},
-				"crdb_gauge":   {"label test1 1.000000", "label test2 1.000000", "label test3 1.000000", "label test4 1.000000"},
+				"counter": {"label test1 6.000000", "label test2 2.000000", "label test3 2.000000", "label test4 2.000000"},
+				"gauge":   {"label test1 1.000000", "label test2 1.000000", "label test3 1.000000", "label test4 1.000000"},
 			},
 			8,
 		},
@@ -150,8 +150,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test5", 2, 1},
 			},
 			map[string][]string{
-				"crdb_counter": {"label test1 6.000000", "label test3 2.000000", "label test4 2.000000", "label test5 2.000000"},
-				"crdb_gauge":   {"label test1 1.000000", "label test3 1.000000", "label test4 1.000000", "label test5 1.000000"},
+				"counter": {"label test1 6.000000", "label test3 2.000000", "label test4 2.000000", "label test5 2.000000"},
+				"gauge":   {"label test1 1.000000", "label test3 1.000000", "label test4 1.000000", "label test5 1.000000"},
 			},
 			8,
 		},

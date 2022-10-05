@@ -1,0 +1,14 @@
+name: contended_tables
+frequency: 10
+maxresults: 100
+labels: [database_name,schema_name,table_name]
+metrics:
+  - name : num_contention_events
+    kind : counter
+    help : number of num_contention_events.
+query: 
+    SELECT
+      database_name, schema_name, table_name, num_contention_events 
+    FROM 
+      crdb_internal.cluster_contended_tables
+    LIMIT $1;
