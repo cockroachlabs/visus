@@ -1,8 +1,9 @@
 module github.com/cockroachlabs/visus
 
-go 1.17
+go 1.19
 
 require (
+	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/crlfmt v0.0.0-20220610162206-024b567ce87b
 	github.com/go-co-op/gocron v1.17.1
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da

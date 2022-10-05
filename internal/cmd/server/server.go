@@ -16,10 +16,18 @@
 package server
 
 import (
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/http"
 	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/server"
+	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
@@ -33,9 +41,15 @@ func Command() *cobra.Command {
 ./visus start --bindAddr "127.0.0.1:15432" `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			pool, err := database.New(ctx, cfg.URL)
+			if err != nil {
+				return err
+			}
+			store := store.New(pool)
+			registry := prometheus.NewRegistry()
 			// Run the httpServer in a separate context, so that we can
 			// control the shutdown process.
-			httpServer, err := http.New(ctx, cfg)
+			httpServer, err := http.New(ctx, cfg, store, registry)
 			if err != nil {
 				return err
 			}
@@ -44,17 +58,28 @@ func Command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			pool, err := database.New(ctx, cfg.URL)
-			if err != nil {
-				return err
-			}
 
-			metricServer := metric.New(ctx, cfg, pool)
+			metricServer := metric.New(ctx, cfg, store, registry)
 			err = metricServer.Start(ctx)
 			if err != nil {
 				return err
 			}
 			defer metricServer.Shutdown(cmd.Context())
+
+			signalChan := make(chan os.Signal, 1)
+			signal.Notify(signalChan, syscall.SIGHUP)
+
+			go func() {
+				for {
+					s := <-signalChan
+					switch s {
+					case syscall.SIGHUP:
+						log.Info("Refreshing configuration")
+						metricServer.Refresh(cmd.Context())
+						httpServer.Refresh(cmd.Context())
+					}
+				}
+			}()
 
 			// Wait to be shut down.
 			<-cmd.Context().Done()
@@ -63,12 +88,19 @@ func Command() *cobra.Command {
 	}
 	f := c.Flags()
 	f.StringVar(&cfg.BindAddr, "bind-addr", "127.0.0.1:8888", "A network address and port to bind to")
-	f.StringVar(&cfg.CertsDir, "certs-dir", "",
-		"Path to the directory containing TLS certificates and keys for the server")
+	f.StringVar(&cfg.BindCert, "bind-cert", "",
+		"Path to the  TLS certificate for the server")
+	f.StringVar(&cfg.BindKey, "bind-key", "",
+		"Path to the  TLS key for the server")
+	f.StringVar(&cfg.CaCert, "ca-cert", "",
+		"Path to the  CA certificate")
+	f.DurationVar(&cfg.Refresh, "refresh", 5*time.Minute,
+		"How ofter to refresh the configuration from the database.")
 	f.StringVar(&cfg.Endpoint, "endpoint", "/_status/vars",
 		"Endpoint for metrics.")
 	f.BoolVar(&cfg.Insecure, "insecure", false, "this flag must be set if no TLS configuration is provided")
 	f.StringVar(&cfg.URL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
+	f.StringVar(&cfg.Prometheus, "prometheus", "", "prometheus endpoint")
 	return c
 }

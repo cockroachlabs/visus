@@ -18,44 +18,110 @@ package http
 import (
 	"context"
 	"net/http"
+	"time"
 
+	"github.com/NYTimes/gziphandler"
 	"github.com/cockroachlabs/visus/internal/server"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/cockroachlabs/visus/internal/translator"
+	"github.com/go-co-op/gocron"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 )
 
 type serverImpl struct {
 	config     *server.Config
 	httpServer *http.Server
+	histograms []store.Histogram
+	store      store.Store
+	scheduler  *gocron.Scheduler
+	registry   *prometheus.Registry
 }
 
 // New constructs a http server to server the metrics
-func New(ctx context.Context, cfg *server.Config) (server.Server, error) {
-
+func New(
+	ctx context.Context, cfg *server.Config, st store.Store, registry *prometheus.Registry,
+) (server.Server, error) {
 	httpServer := &http.Server{
 		Addr: cfg.BindAddr,
 	}
 	server := &serverImpl{
 		config:     cfg,
+		histograms: make([]store.Histogram, 0),
 		httpServer: httpServer,
+		store:      st,
+		scheduler:  gocron.NewScheduler(time.UTC),
+		registry:   registry,
 	}
-	tlsConfig, err := cfg.TLSConfig()
-	if err != nil {
-		return nil, err
-	}
-	httpServer.TLSConfig = tlsConfig
-
-	log.Infof("Starting server. Listening on %s", cfg.BindAddr)
-
 	return server, nil
+}
+
+func (s *serverImpl) Refresh(ctx context.Context) error {
+	histograms, err := s.store.GetHistograms(ctx)
+	if err != nil {
+		return nil
+	}
+	s.histograms = histograms
+	return nil
 }
 
 // Start the server and wait for new connections.
 // It uses the default prometheus handler to return the metric value to the caller.
 func (s *serverImpl) Start(ctx context.Context) error {
-	http.Handle(s.config.Endpoint, promhttp.Handler())
+	s.scheduler.Every(s.config.Refresh).
+		Do(func() {
+			s.Refresh(ctx)
+		})
+	s.scheduler.StartAsync()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if s.config.Prometheus != "" {
+			translators := make([]translator.Translator, 0)
+			for _, h := range s.histograms {
+				hnew, err := translator.New(h)
+				if err != nil {
+					s.errorResponse(w, "Error translating histograms", err)
+					return
+				}
+				translators = append(translators, hnew)
+			}
+
+			tlsConfig, err := s.config.GetTLSClientConfig()
+			if err != nil {
+				s.errorResponse(w, "Error setting up secure connection", err)
+				return
+			}
+			metricsIn, err := ReadMetrics(ctx, s.config.Prometheus, tlsConfig)
+			if err != nil {
+				log.Error(err)
+			}
+			WriteMetrics(ctx, metricsIn, translators, w)
+		}
+		metrics, err := s.registry.Gather()
+		if err != nil {
+			s.errorResponse(w, "Error gathering metrics", err)
+			return
+		}
+		for _, m := range metrics {
+			_, err = expfmt.MetricFamilyToText(w, m)
+			if err != nil {
+				s.errorResponse(w, "Error gathering metrics", err)
+			}
+		}
+
+	})
+
+	http.Handle(s.config.Endpoint, gziphandler.GzipHandler(handler))
 	go func() {
-		err := s.httpServer.ListenAndServe()
+		var err error
+		if !s.config.Insecure {
+			log.Infof("Starting secure server: %v", s.config.BindAddr)
+			err = s.httpServer.ListenAndServeTLS(s.config.BindCert, s.config.BindKey)
+		} else {
+			log.Infof("Starting server: %v", s.config.BindAddr)
+			err = s.httpServer.ListenAndServe()
+		}
 		if err != http.ErrServerClosed {
 			log.Fatal("Error starting server: ", err)
 		}
@@ -66,4 +132,13 @@ func (s *serverImpl) Start(ctx context.Context) error {
 func (s *serverImpl) Shutdown(ctx context.Context) error {
 	log.Info("Shutting down ")
 	return s.httpServer.Shutdown(ctx)
+}
+
+func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error) {
+	log.Errorf("%s: %s", msg, err.Error())
+	w.WriteHeader(http.StatusInternalServerError)
+	_, newErr := w.Write([]byte(err.Error()))
+	if newErr != nil {
+		log.Errorf("Error sending response to client %s", err)
+	}
 }

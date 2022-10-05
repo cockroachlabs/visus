@@ -30,6 +30,7 @@ import (
 func TestGetCollectionNames(t *testing.T) {
 	mock, err := pgxmock.NewConn()
 	require.NoError(t, err)
+	store := New(mock)
 	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
 	columns := []string{"name"}
 	tests := [][]string{
@@ -44,7 +45,7 @@ func TestGetCollectionNames(t *testing.T) {
 			res.AddRow(row)
 		}
 		query.WillReturnRows(res)
-		names, err := GetCollectionNames(ctx, mock)
+		names, err := store.GetCollectionNames(ctx)
 		require.NoError(t, err)
 		assert.Equal(t, names, tt)
 	}
@@ -53,13 +54,14 @@ func TestGetCollectionNames(t *testing.T) {
 func TestDeleteCollection(t *testing.T) {
 	mock, err := pgxmock.NewConn()
 	require.NoError(t, err)
+	store := New(mock)
 	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
 	mock.ExpectBegin()
 	mock.ExpectExec("delete from _visus.metric where collection = .+").WithArgs("test").
 		WillReturnResult(pgxmock.NewResult("DELETE", 0))
 	mock.ExpectExec("delete from _visus.collection where name = .+").WithArgs("test").
 		WillReturnResult(pgxmock.NewResult("DELETE", 1))
-	err = DeleteCollection(ctx, mock, "test")
+	err = store.DeleteCollection(ctx, "test")
 	require.NoError(t, err)
 }
 
@@ -102,6 +104,7 @@ func TestGetCollection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		mock, err := pgxmock.NewConn()
+		store := New(mock)
 		require.NoError(t, err)
 		collQuery := mock.ExpectQuery("select name, updated, enabled, scope, maxResults, frequency, query, labels from _visus.collection where name = .+").
 			WithArgs(tt.name)
@@ -124,7 +127,7 @@ func TestGetCollection(t *testing.T) {
 			}
 		}
 		metricQuery.WillReturnRows(res)
-		coll, err := GetCollection(ctx, mock, tt.name)
+		coll, err := store.GetCollection(ctx, tt.name)
 		require.NoError(t, err)
 		assert.Equal(t, tt.collection, coll)
 		mock.Close(ctx)
@@ -168,6 +171,7 @@ func TestPutCollection(t *testing.T) {
 	}
 	for _, tt := range tests {
 		mock, err := pgxmock.NewConn()
+		store := New(mock)
 		require.NoError(t, err)
 		mock.ExpectBegin()
 		mock.ExpectExec("delete from _visus.metric where collection = .+").WithArgs(tt.collection.Name).
@@ -183,7 +187,7 @@ func TestPutCollection(t *testing.T) {
 				WithArgs(tt.collection.Name, metric.Name, metric.Kind, metric.Help).
 				WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		}
-		err = PutCollection(ctx, mock, tt.collection)
+		err = store.PutCollection(ctx, tt.collection)
 		require.NoError(t, err)
 		mock.Close(ctx)
 	}

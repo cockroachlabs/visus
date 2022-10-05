@@ -35,9 +35,9 @@ import (
 type Collector interface {
 	fmt.Stringer
 	// AddCounter adds a counter to the list of metrics to return.
-	AddCounter(name string, help string) Collector
+	AddCounter(name string, help string) error
 	// AddGauge adds a gauge to the list of metrics to return.
-	AddGauge(name string, help string) Collector
+	AddGauge(name string, help string) error
 	// Collect retrieves the values for all the metrics defined.
 	Collect(ctx context.Context) error
 	// GetFrequency returns how often the collector is called, in seconds.
@@ -68,6 +68,7 @@ type collector struct {
 	pool         database.PgxPool
 	metricsCache *lru.Cache
 	maxResults   int
+	registerer   prometheus.Registerer
 	mu           struct {
 		sync.Mutex
 		inUse bool
@@ -131,11 +132,14 @@ func New(name string, labels []string, query string, pool database.PgxPool) Coll
 		frequency:  10,
 		maxResults: 100,
 		pool:       pool,
+		registerer: prometheus.DefaultRegisterer,
 	}
 }
 
 // FromCollection creates a collector from a collection configuration stored in the database.
-func FromCollection(coll *store.Collection, pool database.PgxPool) Collector {
+func FromCollection(
+	coll *store.Collection, pool database.PgxPool, registerer prometheus.Registerer,
+) (Collector, error) {
 	labelMap := make(map[string]int)
 	for i, l := range coll.Labels {
 		labelMap[l] = i
@@ -152,35 +156,41 @@ func FromCollection(coll *store.Collection, pool database.PgxPool) Collector {
 		frequency:    int(coll.Frequency.Microseconds / (1000 * 1000)),
 		maxResults:   coll.MaxResult,
 		pool:         pool,
+		registerer:   registerer,
 	}
 	for _, m := range coll.Metrics {
+		var err error
 		switch m.Kind {
 		case store.Gauge:
-			res.AddGauge(m.Name, m.Help)
+			err = res.AddGauge(m.Name, m.Help)
 		case store.Counter:
-			res.AddCounter(m.Name, m.Help)
+			err = res.AddCounter(m.Name, m.Help)
 		default:
-			log.Fatalf("%s malformed", coll.Name)
+			log.Errorf("%s malformed", coll.Name)
+		}
+		if err != nil {
+			return nil, err
 		}
 	}
-	return res
+	return res, nil
 }
 
 // AddCounter adds a metric counter. The name must match one of the columns returned by the query.
-func (c *collector) AddCounter(name string, help string) Collector {
+func (c *collector) AddCounter(name string, help string) error {
 	c.cardinality++
+	metricName := c.name + "_" + name
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: c.name + "_" + name,
+			Name: metricName,
 			Help: help,
 		},
 		c.labels,
 	)
-	prometheus.Unregister(vec)
-	if err := prometheus.Register(vec); err != nil {
-		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
-		return c
+	c.registerer.Unregister(vec)
+	if err := c.registerer.Register(vec); err != nil {
+		return err
 	}
+	log.Debugf("registering counter %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,
@@ -188,24 +198,26 @@ func (c *collector) AddCounter(name string, help string) Collector {
 			name: name,
 			vec:  vec,
 		}
-	return c
+	return nil
 }
 
 // AddGauge adds a metric gauge. The name must match one of the columns returned by the query.
-func (c *collector) AddGauge(name string, help string) Collector {
+func (c *collector) AddGauge(name string, help string) error {
 	c.cardinality++
+	metricName := c.name + "_" + name
 	vec := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: c.name + "_" + name,
+			Name: metricName,
 			Help: help,
 		},
 		c.labels,
 	)
-	prometheus.Unregister(vec)
-	if err := prometheus.Register(vec); err != nil {
+	c.registerer.Unregister(vec)
+	if err := c.registerer.Register(vec); err != nil {
 		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
-		return c
+		return err
 	}
+	log.Debugf("registering counter %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,
@@ -213,7 +225,7 @@ func (c *collector) AddGauge(name string, help string) Collector {
 			name: name,
 			vec:  vec,
 		}
-	return c
+	return nil
 }
 
 // Collect execute the query and updates the Prometheus metrics.
@@ -327,6 +339,12 @@ func (c *collector) WithFrequency(fr int) Collector {
 // WithMaxResults sets the max number of results to return.
 func (c *collector) WithMaxResults(max int) Collector {
 	c.maxResults = max
+	return c
+}
+
+func (c *collector) WithRegisterer(reg prometheus.Registerer) Collector {
+	c.registerer = reg
+	log.Infof("%+v", c.registerer)
 	return c
 }
 

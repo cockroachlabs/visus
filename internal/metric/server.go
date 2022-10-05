@@ -20,10 +20,10 @@ import (
 	"time"
 
 	"github.com/cockroachlabs/visus/internal/collector"
-	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
+	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -34,17 +34,23 @@ type scheduledJob struct {
 
 // Config defines the metrics to be retrieved from the metricsServer
 type metricsServer struct {
-	pool          database.PgxPool
+	config        *server.Config
+	store         store.Store
 	scheduledJobs map[string]*scheduledJob
 	scheduler     *gocron.Scheduler
+	registry      *prometheus.Registry
 }
 
 // New creates a new server to collect the metrics.
-func New(ctx context.Context, cfg *server.Config, pool database.PgxPool) server.Server {
+func New(
+	ctx context.Context, cfg *server.Config, store store.Store, registry *prometheus.Registry,
+) server.Server {
 	server := &metricsServer{
-		pool:          pool,
+		config:        cfg,
+		store:         store,
 		scheduler:     gocron.NewScheduler(time.UTC),
 		scheduledJobs: make(map[string]*scheduledJob),
+		registry:      registry,
 	}
 	return server
 }
@@ -57,18 +63,21 @@ func (m *metricsServer) addJob(name string, coll collector.Collector, job *gocro
 	}
 }
 
-// scheduleCollectors schedules all the collectors based on the
+// refresh schedules all the collectors based on the
 // configuration stored in the database.
-func (m *metricsServer) scheduleCollectors(ctx context.Context) error {
+func (m *metricsServer) Refresh(ctx context.Context) error {
 	newCollectors := make(map[string]bool)
-	names, err := store.GetCollectionNames(ctx, m.pool)
+	names, err := m.store.GetCollectionNames(ctx)
 	if err != nil {
 		return err
 	}
 	for _, name := range names {
-		coll, err := store.GetCollection(ctx, m.pool, name)
+		coll, err := m.store.GetCollection(ctx, name)
 		if err != nil {
 			log.Errorf("Unable to find %s: %s", name, err.Error())
+			continue
+		}
+		if !coll.Enabled {
 			continue
 		}
 		newCollectors[name] = true
@@ -81,11 +90,15 @@ func (m *metricsServer) scheduleCollectors(ctx context.Context) error {
 			log.Debugf("Already scheduled %s, removing", coll.Name)
 			m.scheduler.RemoveByReference(existing.job)
 		}
-		collctr := collector.FromCollection(coll, m.pool)
-		log.Infof("Scheduling %s every %d seconds", collctr.String(), collctr.GetFrequency())
+		collctr, err := collector.FromCollection(coll, m.store.GetPool(), m.registry)
+		if err != nil {
+			log.Errorf("Error scheduling collector %s: %s", name, err.Error())
+			continue
+		}
+		log.Infof("Scheduling collector %s every %d seconds", collctr.String(), collctr.GetFrequency())
 		job, err := m.scheduler.Every(collctr.GetFrequency()).Second().
 			Do(func(collctr collector.Collector) {
-				log.Infof("Running collector %s", collctr.String())
+				log.Debugf("Running collector %s", collctr.String())
 				err := collctr.Collect(ctx)
 				if err != nil {
 					log.Errorf("collector %s: %s", collctr, err.Error())
@@ -99,7 +112,7 @@ func (m *metricsServer) scheduleCollectors(ctx context.Context) error {
 	// remove all the schedule jobs that have been deleted from the database.
 	for key, value := range m.scheduledJobs {
 		if _, ok := newCollectors[key]; !ok {
-			log.Infof("Removing %s", key)
+			log.Infof("Removing collector: %s", key)
 			m.scheduler.RemoveByReference(value.job)
 			value.collector.Unregister()
 			delete(m.scheduledJobs, key)
@@ -110,9 +123,9 @@ func (m *metricsServer) scheduleCollectors(ctx context.Context) error {
 
 // Start schedules all the collectors.
 func (m *metricsServer) Start(ctx context.Context) error {
-	m.scheduler.Every(1).Minute().
+	m.scheduler.Every(m.config.Refresh).
 		Do(func() {
-			m.scheduleCollectors(ctx)
+			m.Refresh(ctx)
 		})
 	m.scheduler.StartAsync()
 	return nil

@@ -60,6 +60,10 @@ type test struct {
 
 const maxResults = 2
 
+func assertions(t *testing.T) (*assert.Assertions, *require.Assertions) {
+	return assert.New(t), require.New(t)
+}
+
 func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, rows []sample) {
 	columns := []string{"label", "gauge", "counter"}
 	query := mock.ExpectQuery("SELECT label, counter, gauge from test limit .+").WithArgs(maxResults)
@@ -72,16 +76,19 @@ func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, r
 	require.NoError(t, err)
 }
 func TestCollector_Collect(t *testing.T) {
+	a, r := assertions(t)
 	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
+	r.NoError(err)
 	coll := New("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).
-		WithMaxResults(maxResults).
-		AddCounter("counter", "counter").
-		AddGauge("gauge", "gauge")
+		WithMaxResults(maxResults)
+	err = coll.AddCounter("counter", "counter")
+	r.NoError(err)
+	err = coll.AddGauge("gauge", "gauge")
+	r.NoError(err)
 	collector := coll.(*collector)
 	collector.maybeInitCache()
-	require.Equal(t, 8, collector.metricsCache.MaxEntries)
-	require.Equal(t, 0, collector.metricsCache.Len())
+	r.Equal(8, collector.metricsCache.MaxEntries)
+	r.Equal(0, collector.metricsCache.Len())
 	tests := []test{
 		{
 			"one",
@@ -160,7 +167,119 @@ func TestCollector_Collect(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testCollect(t, collector, mock, tt.samples)
 			testVerify(t, tt.expected)
-			assert.Equal(t, tt.cacheLen, collector.metricsCache.Len())
+			a.Equal(tt.cacheLen, collector.metricsCache.Len())
 		})
 	}
+}
+
+func Test_collector_AddCounter(t *testing.T) {
+	a, r := assertions(t)
+	mock, err := pgxmock.NewConn()
+	r.NoError(err)
+	collName := "test"
+	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).(*collector)
+	registry := prometheus.NewRegistry()
+	coll.registerer = registry
+
+	name := "counter"
+	help := "help counter"
+	err = coll.AddCounter(name, help)
+	r.NoError(err)
+	metric, ok := coll.metrics[name]
+	a.Equal(true, ok)
+	a.Equal(name, metric.name)
+	a.Equal(help, metric.help)
+	a.Equal(Counter, metric.kind)
+
+	counter, ok := metric.vec.(*prometheus.CounterVec)
+	r.Equal(true, ok)
+	counter.WithLabelValues("v1").Inc()
+
+	families, err := registry.Gather()
+	r.NoError(err)
+	r.Equal(1, len(families))
+	fam := families[0]
+	r.Equal(collName+"_"+name, *fam.Name)
+	metrics := fam.Metric
+	r.Equal(1, len(metrics))
+
+	another := "another"
+	help = "another help"
+	err = coll.AddCounter(another, help)
+	r.NoError(err)
+	metric, ok = coll.metrics[another]
+	a.Equal(true, ok)
+	a.Equal(another, metric.name)
+	a.Equal(help, metric.help)
+	a.Equal(Counter, metric.kind)
+	r.Equal(2, len(coll.metrics))
+
+	counter, ok = metric.vec.(*prometheus.CounterVec)
+	r.Equal(true, ok)
+	counter.WithLabelValues("v1").Inc()
+
+	families, err = registry.Gather()
+	r.NoError(err)
+	r.Equal(2, len(families))
+
+	// changing help is not allowed
+	help = "help counter changed"
+	err = coll.AddCounter(name, help)
+	a.Error(err)
+}
+
+func Test_collector_AddGauge(t *testing.T) {
+	a, r := assertions(t)
+	mock, err := pgxmock.NewConn()
+	r.NoError(err)
+	collName := "test"
+	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).(*collector)
+	registry := prometheus.NewRegistry()
+	coll.registerer = registry
+
+	name := "gauge"
+	help := "help gauge"
+	err = coll.AddGauge(name, help)
+	r.NoError(err)
+	metric, ok := coll.metrics[name]
+	a.Equal(true, ok)
+	a.Equal(name, metric.name)
+	a.Equal(help, metric.help)
+	a.Equal(Gauge, metric.kind)
+
+	counter, ok := metric.vec.(*prometheus.GaugeVec)
+	r.Equal(true, ok)
+	counter.WithLabelValues("v1").Inc()
+
+	families, err := registry.Gather()
+	r.NoError(err)
+	r.Equal(1, len(families))
+	fam := families[0]
+	r.Equal(collName+"_"+name, *fam.Name)
+	metrics := fam.Metric
+	r.Equal(1, len(metrics))
+
+	another := "another"
+	help = "another help"
+	err = coll.AddGauge(another, help)
+	r.NoError(err)
+	metric, ok = coll.metrics[another]
+	a.Equal(true, ok)
+	a.Equal(another, metric.name)
+	a.Equal(help, metric.help)
+	a.Equal(Gauge, metric.kind)
+	r.Equal(2, len(coll.metrics))
+
+	counter, ok = metric.vec.(*prometheus.GaugeVec)
+	r.Equal(true, ok)
+	counter.WithLabelValues("v1").Inc()
+
+	families, err = registry.Gather()
+	r.NoError(err)
+	r.Equal(2, len(families))
+
+	// changing help is not allowed
+	help = "help counter changed"
+	err = coll.AddGauge(name, help)
+	a.Error(err)
 }

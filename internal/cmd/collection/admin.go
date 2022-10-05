@@ -38,7 +38,7 @@ type params struct {
 
 var databaseURL = ""
 
-// listCmd list
+// listCmd list all the collections in the datababse
 func listCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "list",
@@ -49,7 +49,8 @@ func listCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			collections, err := store.GetCollectionNames(ctx, pool)
+			store := store.New(pool)
+			collections, err := store.GetCollectionNames(ctx)
 			if err != nil {
 				fmt.Print("Error retrieving collections")
 				return err
@@ -73,7 +74,8 @@ func initCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = store.Init(ctx, pool)
+			store := store.New(pool)
+			err = store.Init(ctx)
 			if err != nil {
 				fmt.Printf("Error initializing database at %s.", databaseURL)
 				return err
@@ -97,7 +99,8 @@ func getCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			collection, err := store.GetCollection(ctx, pool, collectionName)
+			store := store.New(pool)
+			collection, err := store.GetCollection(ctx, collectionName)
 			if err != nil {
 				fmt.Printf("Error retrieving collection %s.", collectionName)
 				return err
@@ -125,7 +128,8 @@ func testCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			coll, err := store.GetCollection(ctx, pool, collectionName)
+			st := store.New(pool)
+			coll, err := st.GetCollection(ctx, collectionName)
 			if err != nil {
 				fmt.Printf("Error retrieving collection %s.", collectionName)
 				return err
@@ -174,7 +178,8 @@ func deleteCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			err = store.DeleteCollection(ctx, pool, args[0])
+			store := store.New(pool)
+			err = store.DeleteCollection(ctx, args[0])
 			if err != nil {
 				fmt.Printf("Error deleting collection %s.\n", collectionName)
 				return err
@@ -198,6 +203,7 @@ type config struct {
 	Name       string
 	Frequency  int
 	MaxResults int
+	Enabled    bool `default:"true"`
 	Query      string
 	Labels     []string
 	Metrics    []metricDef
@@ -238,7 +244,7 @@ func putCmd() *cobra.Command {
 			}
 			collection := &store.Collection{
 				Name:      config.Name,
-				Enabled:   true,
+				Enabled:   config.Enabled,
 				Scope:     store.Local,
 				MaxResult: config.MaxResults,
 				Frequency: pgtype.Interval{Status: pgtype.Present, Microseconds: int64(config.Frequency) * (1000 * 1000)},
@@ -246,7 +252,8 @@ func putCmd() *cobra.Command {
 				Labels:    config.Labels,
 				Metrics:   metrics,
 			}
-			err = store.PutCollection(ctx, pool, collection)
+			store := store.New(pool)
+			err = store.PutCollection(ctx, collection)
 			if err != nil {
 				fmt.Printf("Error inserting collection %s.", config.Name)
 				return err

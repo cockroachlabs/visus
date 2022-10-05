@@ -16,34 +16,44 @@ package server
 
 import (
 	"crypto/tls"
-	"path"
-
-	"github.com/pkg/errors"
+	"crypto/x509"
+	"net/url"
+	"os"
+	"time"
 )
 
 // Config encapsulates the command-line configurations and the logic
 // necessary to make those values usable.
 type Config struct {
-	BindAddr string // Address to bind the server to.
-	CertsDir string // Paths to TLS configurations.
-	Endpoint string // Endpoint for metrics
-	Insecure bool   // Sanity check to ensure that the operator really means it.
-	URL      string // URL to connect to the database
+	BindAddr          string        // Address to bind the server to.
+	BindCert, BindKey string        // Paths to Certificate and Key.
+	CaCert            string        // Path to the Root CA.
+	Endpoint          string        // Endpoint for metrics
+	Insecure          bool          // Sanity check to ensure that the operator really means it.
+	Prometheus        string        // URL for the node prometheus endpoint
+	Refresh           time.Duration // how often to refresh the configuration.
+	URL               string        // URL to connect to the database
 }
 
-// TLSConfig returns the TLS configuration to use for incoming SQL
-// connections. It will return nil if TLS should not be used for
-// incoming connections.
-func (c *Config) TLSConfig() (*tls.Config, error) {
-	if c.CertsDir != "" {
-		cert, err := tls.LoadX509KeyPair(path.Join(c.CertsDir, "client.insights.crt"), path.Join(c.CertsDir, "client.insights.key"))
+// GetTLSClientConfig returns the TLS configuration to use for outgoing http connections.
+func (c *Config) GetTLSClientConfig() (*tls.Config, error) {
+	url, err := url.Parse(c.Prometheus)
+	if err != nil {
+		return nil, err
+	}
+	if url.Scheme == "http" {
+		return nil, nil
+	}
+	var caCertPool *x509.CertPool
+	if c.CaCert != "" {
+		caCert, err := os.ReadFile(c.CaCert)
 		if err != nil {
 			return nil, err
 		}
-		return &tls.Config{Certificates: []tls.Certificate{cert}}, nil
+		caCertPool = x509.NewCertPool()
+		caCertPool.AppendCertsFromPEM(caCert)
 	}
-	if c.Insecure {
-		return nil, nil
-	}
-	return nil, errors.New("no --certs-dir, must specify ")
+	return &tls.Config{
+		RootCAs: caCertPool,
+	}, nil
 }

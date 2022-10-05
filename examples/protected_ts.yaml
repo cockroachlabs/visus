@@ -1,0 +1,19 @@
+
+name: protected_ts
+frequency: 10
+maxresults: 1
+labels: []
+metrics:
+  - name : max_age_seconds
+    kind : counter
+    help : max age of protected timestamps, in seconds.
+query: 
+   SELECT greatest(0,EXTRACT(epoch FROM max_age)) as max_age_seconds
+   FROM (
+    SELECT 
+      max(now()-((ts/1000000000)::int::timestamp))  as "max_age"
+    FROM 
+      system.protected_ts_records 
+   )
+   LIMIT 
+    $1;

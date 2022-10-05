@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/jackc/pgtype"
 	log "github.com/sirupsen/logrus"
 )
@@ -67,9 +66,6 @@ type Collection struct {
 	Scope        Scope            // Scope of the collection (global vs local)
 }
 
-//go:embed sql/ddl.sql
-var ddl string
-
 //go:embed sql/listCollections.sql
 var listCollectionsStmt string
 
@@ -91,15 +87,9 @@ var deleteCollectionStmt string
 //go:embed sql/deleteMetrics.sql
 var deleteMetricsStmt string
 
-// Init initializes the connection to the database
-func Init(ctx context.Context, conn database.PgxPool) error {
-	_, err := conn.Exec(ctx, ddl)
-	return err
-}
-
 // DeleteCollection removes a collection configuration and associated metrics from the database.
-func DeleteCollection(ctx context.Context, pool database.PgxPool, name string) error {
-	txn, err := pool.Begin(ctx)
+func (s *store) DeleteCollection(ctx context.Context, name string) error {
+	txn, err := s.pool.Begin(ctx)
 	if err != nil {
 		log.Debugln(err)
 		return err
@@ -121,8 +111,8 @@ func DeleteCollection(ctx context.Context, pool database.PgxPool, name string) e
 }
 
 // GetCollectionNames retrieves all the collection names stored in the database.
-func GetCollectionNames(ctx context.Context, pool database.PgxPool) ([]string, error) {
-	rows, err := pool.Query(ctx, listCollectionsStmt)
+func (s *store) GetCollectionNames(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, listCollectionsStmt)
 	if err != nil {
 		log.Errorf("GetCollectionNames %s ", err.Error())
 		return nil, err
@@ -143,9 +133,9 @@ func GetCollectionNames(ctx context.Context, pool database.PgxPool) ([]string, e
 }
 
 // GetCollection retrieves the collection configuration from the database
-func GetCollection(ctx context.Context, pool database.PgxPool, name string) (*Collection, error) {
+func (s *store) GetCollection(ctx context.Context, name string) (*Collection, error) {
 	collection := &Collection{}
-	collRows, err := pool.Query(ctx, getCollectionStmt, name)
+	collRows, err := s.pool.Query(ctx, getCollectionStmt, name)
 	if err != nil {
 		log.Errorf("GetCollection %s ", err.Error())
 		return nil, err
@@ -160,7 +150,7 @@ func GetCollection(ctx context.Context, pool database.PgxPool, name string) (*Co
 			log.Debugln(err)
 			return nil, err
 		}
-		metrics, err := GetMetrics(ctx, pool, name)
+		metrics, err := s.GetMetrics(ctx, name)
 		if err != nil {
 			log.Debugln(err)
 			return nil, err
@@ -173,9 +163,9 @@ func GetCollection(ctx context.Context, pool database.PgxPool, name string) (*Co
 }
 
 // GetMetrics retrieves the configuration for the metrics associated to this collection.
-func GetMetrics(ctx context.Context, pool database.PgxPool, name string) ([]Metric, error) {
+func (s *store) GetMetrics(ctx context.Context, name string) ([]Metric, error) {
 	metrics := make([]Metric, 0)
-	rows, err := pool.Query(ctx, getMetricsStmt, name)
+	rows, err := s.pool.Query(ctx, getMetricsStmt, name)
 	if err != nil {
 		log.Errorf("GetMetrics %s ", err.Error())
 		return nil, err
@@ -195,9 +185,9 @@ func GetMetrics(ctx context.Context, pool database.PgxPool, name string) ([]Metr
 
 // PutCollection adds a new collection configuration to the database.
 // If a collection with the same name already exists, it is replaced.
-func PutCollection(ctx context.Context, pool database.PgxPool, collection *Collection) error {
+func (s *store) PutCollection(ctx context.Context, collection *Collection) error {
 	log.Debugf("%+v", collection)
-	txn, err := pool.Begin(ctx)
+	txn, err := s.pool.Begin(ctx)
 	if err != nil {
 		log.Debugln(err)
 		return err

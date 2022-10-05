@@ -19,6 +19,8 @@ import "context"
 
 // A Server is a process that can be started and shutdown.
 type Server interface {
+	// Refresh the server configuration
+	Refresh(ctx context.Context) error
 	// Start the server
 	Start(ctx context.Context) error
 	// Shutdown the server, releasing all the resources associated with it.
