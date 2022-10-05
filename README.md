@@ -24,6 +24,7 @@ LIMIT
 
 Prometheus collectors will add additional labels to track the cluster name as well as the instance where the metrics are coming from.
 ## Example
+
 For instance, to track the sql activity at a application and database level, we can use this yaml configuration (saved into the query_count.yaml file)
 There are two labels (application, database) that are returned as the first 2 columns in the SQL query.
 We have a metric, exec_count, which is a counter; its description is "statement count per application and database".
@@ -60,6 +61,7 @@ Assuming we have a `$CRDB_URL` variable that defines the URL to connect to the d
 ```bash
 CRDB_URL="postgresql://root@localhost:26257/defaultdb?sslmode=disable"
 ```
+
 Initialize the database that contains the configuration for the collections:
 
 ```bash
