@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package config
+package server
 
 import (
 	"crypto/tls"
@@ -24,7 +24,7 @@ import (
 // Config encapsulates the command-line configurations and the logic
 // necessary to make those values usable.
 type Config struct {
-	BindAddr string // Address to bind the proxy to.
+	BindAddr string // Address to bind the server to.
 	CertsDir string // Paths to TLS configurations.
 	Endpoint string // Endpoint for metrics
 	Insecure bool   // Sanity check to ensure that the operator really means it.
@@ -45,5 +45,5 @@ func (c *Config) TLSConfig() (*tls.Config, error) {
 	if c.Insecure {
 		return nil, nil
 	}
-	return nil, errors.New("no --certs-dir, must specify --insecure")
+	return nil, errors.New("no --certs-dir, must specify ")
 }

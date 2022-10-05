@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package collector manages a metric collection.
 package collector
 
 import (
@@ -20,38 +21,48 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/cockroachlabs/visus/internal/database"
+	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/golang/groupcache/lru"
 	"github.com/jackc/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	log "github.com/sirupsen/logrus"
 )
 
 // A Collector retrieves all the metric values for all the gauges and counters configured.
 type Collector interface {
 	fmt.Stringer
-	AddCounter(name string, desc string) Collector
+	// AddCounter adds a counter to the list of metrics to return.
+	AddCounter(name string, help string) Collector
 	// AddGauge adds a gauge to the list of metrics to return.
-	AddGauge(name string, desc string) Collector
-	// GetFrequency returns how often the collector is called, in seconds.
-	GetFrequency() int
+	AddGauge(name string, help string) Collector
 	// Collect retrieves the values for all the metrics defined.
 	Collect(ctx context.Context) error
-	// WithFrequency determines how often the collector is called, in seconds.
+	// GetFrequency returns how often the collector is called, in seconds.
+	GetFrequency() int
+	// GetLastModified retrieve the last time the job was modified.
+	GetLastModified() time.Time
+	// Unregister all the prometheus collectors.
+	Unregister()
+	// WithFrequency sets the frequency
 	WithFrequency(frequency int) Collector
 	// WithMaxResults sets the maximum number of results to collect each time Collect is called.
 	WithMaxResults(max int) Collector
-	// AddCounter adds a counter to the list of metrics to return.
 }
 
+// collector implementation. To reduce the cardinality of the metrics, it keeps a cache
+// of metrics
 type collector struct {
 	name         string
+	lastModified time.Time
 	cardinality  int
+	enabled      bool
 	frequency    int
 	labels       []string
-	metrics      []metric
+	labelMap     map[string]int
+	metrics      map[string]metric
 	query        string
 	first        bool
 	pool         database.PgxPool
@@ -63,24 +74,25 @@ type collector struct {
 	}
 }
 
+// MetricKind specify the type of the metric: counter or gauge.
+//
 //go:generate go run golang.org/x/tools/cmd/stringer -type=MetricKind
-// MetricKind represents the type of metric
 type MetricKind int
 
 const (
 	// Undefined is for metrics not currently supported.
 	Undefined MetricKind = iota
-	// A counter is a cumulative metric that represents a single monotonically increasing value.
+	// Counter is a cumulative metric that represents a single monotonically increasing value.
 	Counter
-	// A gauge is a metric that represents a single numerical value that can arbitrarily go up and down.
+	// Gauge is a metric that represents a single numerical value that can arbitrarily go up and down.
 	Gauge
 )
 
 type metric struct {
-	desc string
+	help string
 	kind MetricKind
 	name string
-	vec  interface{}
+	vec  prometheus.Collector
 }
 
 type cacheGC interface {
@@ -97,10 +109,23 @@ type cacheValue struct {
 	value  float64
 }
 
+// New creates a collector with the given name.
+// The labels define the various attributes of the metrics being captured.
+// The query is the SQL query being executed to retrieve the metric values. The query must have an argument
+// to specify the limit on the number results to be returned. The columns must contain the labels specified.
+// The format of the query:
+// (SELECT label1,label2, ..., metric1,metric2,... FROM ... WHERE ... LIMIT $1)
 func New(name string, labels []string, query string, pool database.PgxPool) Collector {
+	labelMap := make(map[string]int)
+	for i, l := range labels {
+		labelMap[l] = i
+	}
 	return &collector{
+		enabled:    true,
 		name:       name,
 		labels:     labels,
+		labelMap:   labelMap,
+		metrics:    make(map[string]metric),
 		query:      query,
 		first:      true,
 		frequency:  10,
@@ -109,50 +134,94 @@ func New(name string, labels []string, query string, pool database.PgxPool) Coll
 	}
 }
 
-func (c *collector) AddCounter(name string, desc string) Collector {
+// FromCollection creates a collector from a collection configuration stored in the database.
+func FromCollection(coll *store.Collection, pool database.PgxPool) Collector {
+	labelMap := make(map[string]int)
+	for i, l := range coll.Labels {
+		labelMap[l] = i
+	}
+	res := &collector{
+		enabled:      true,
+		name:         coll.Name,
+		labels:       coll.Labels,
+		labelMap:     labelMap,
+		lastModified: coll.LastModified.Time,
+		metrics:      make(map[string]metric),
+		query:        coll.Query,
+		first:        true,
+		frequency:    int(coll.Frequency.Microseconds / (1000 * 1000)),
+		maxResults:   coll.MaxResult,
+		pool:         pool,
+	}
+	for _, m := range coll.Metrics {
+		switch m.Kind {
+		case store.Gauge:
+			res.AddGauge(m.Name, m.Help)
+		case store.Counter:
+			res.AddCounter(m.Name, m.Help)
+		default:
+			log.Fatalf("%s malformed", coll.Name)
+		}
+	}
+	return res
+}
+
+// AddCounter adds a metric counter. The name must match one of the columns returned by the query.
+func (c *collector) AddCounter(name string, help string) Collector {
 	c.cardinality++
-	c.metrics = append(c.metrics,
+	vec := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: c.name + "_" + name,
+			Help: help,
+		},
+		c.labels,
+	)
+	prometheus.Unregister(vec)
+	if err := prometheus.Register(vec); err != nil {
+		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
+		return c
+	}
+	c.metrics[name] =
 		metric{
-			desc: desc,
+			help: help,
 			kind: Counter,
 			name: name,
-			vec: promauto.NewCounterVec(
-				prometheus.CounterOpts{
-					Name: name,
-					Help: desc,
-				},
-				c.labels,
-			),
-		})
+			vec:  vec,
+		}
 	return c
 }
 
-func (c *collector) AddGauge(name string, desc string) Collector {
+// AddGauge adds a metric gauge. The name must match one of the columns returned by the query.
+func (c *collector) AddGauge(name string, help string) Collector {
 	c.cardinality++
-	c.metrics = append(c.metrics,
+	vec := prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: c.name + "_" + name,
+			Help: help,
+		},
+		c.labels,
+	)
+	prometheus.Unregister(vec)
+	if err := prometheus.Register(vec); err != nil {
+		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
+		return c
+	}
+	c.metrics[name] =
 		metric{
-			desc: desc,
+			help: help,
 			kind: Gauge,
 			name: name,
-			vec: promauto.NewGaugeVec(
-				prometheus.GaugeOpts{
-					Name: name,
-					Help: desc,
-				},
-				c.labels,
-			),
-		})
+			vec:  vec,
+		}
 	return c
 }
 
-func (c *collector) GetFrequency() int {
-	return c.frequency
-}
-
+// Collect execute the query and updates the Prometheus metrics.
+// (TODO: silvano) handle global collectors (run only on one node)
 func (c *collector) Collect(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.mu.inUse {
+	if c.mu.inUse || !c.enabled {
 		return nil
 	}
 	c.mu.inUse = true
@@ -161,12 +230,11 @@ func (c *collector) Collect(ctx context.Context) error {
 	}()
 	c.maybeInitCache()
 	query := c.query
-	labelNames := c.labels
-	log.Debugf("collectFamilyMetrics %s ", c.name)
-	log.Tracef("collectFamilyMetrics %s query %s ", c.name, query)
+	log.Debugf("Collect %s ", c.name)
+	log.Tracef("Collect %s query %s ", c.name, query)
 	rows, err := c.pool.Query(ctx, query, c.maxResults)
 	if err != nil {
-		log.Errorf("collectFamilyMetrics %s ", err.Error())
+		log.Errorf("Collect %s \n%s", err.Error(), c.query)
 		return err
 	}
 	defer rows.Close()
@@ -178,26 +246,20 @@ func (c *collector) Collect(ctx context.Context) error {
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
-			log.Warnf("collectFamilyMetrics %s", err.Error())
+			log.Warnf("Collect %s", err.Error())
 			continue
 		}
-		log.Tracef("value %v ", values)
-		labels := make([]string, 0)
+		labels := make([]string, len(c.labels))
 		for i, v := range values {
-			log.Tracef("value %T ", v)
-			if i < len(labelNames) {
+			colName := string(desc[i].Name)
+			if pos, ok := c.labelMap[colName]; ok {
 				if value, ok := v.(string); ok {
-					log.Tracef("adding label %s ", value)
-					labels = append(labels, value)
+					labels[pos] = value
 				} else {
-					log.Errorf("Unknown type %T", v)
+					log.Errorf("Unknown type %T for label %s", v, colName)
 				}
-			} else {
-				if i-len(labelNames) >= len(c.metrics) {
-					continue
-				}
-				metric := c.metrics[i-len(labelNames)]
-				log.Tracef("Retrieving metric %T %T ", metric.vec, v)
+			} else if _, ok := c.metrics[colName]; ok {
+				metric := c.metrics[colName]
 				switch vec := metric.vec.(type) {
 				case *prometheus.CounterVec:
 					switch value := v.(type) {
@@ -209,8 +271,9 @@ func (c *collector) Collect(ctx context.Context) error {
 						var floatValue float64
 						value.AssignTo(&floatValue)
 						c.counterAdd(vec, metric.name, labels, floatValue)
+					case nil:
 					default:
-						log.Errorf("Unknown type %T", v)
+						log.Errorf("Unknown type %T for %s", v, metric.name)
 					}
 				case *prometheus.GaugeVec:
 					switch value := v.(type) {
@@ -222,28 +285,52 @@ func (c *collector) Collect(ctx context.Context) error {
 						var floatValue float64
 						value.AssignTo(&floatValue)
 						c.gaugeSet(vec, metric.name, labels, floatValue)
+					case nil:
 					default:
-						log.Errorf("Unknown type %T", v)
+						log.Errorf("Unknown type %T for %s", v, metric.name)
 					}
 				}
+			} else {
+				log.Errorf("Unknown column %s", colName)
 			}
 		}
 	}
 	return nil
 }
 
+// GetFrequency returns how often the collector runs (in seconds)
+func (c *collector) GetFrequency() int {
+	return c.frequency
+}
+
+// GetLastModified returns the last time this collector definition was updated.
+func (c *collector) GetLastModified() time.Time {
+	return c.lastModified
+}
+
+// String implements fmt.Stringer
 func (c *collector) String() string {
 	return c.name
 }
+func (c *collector) Unregister() {
+	for _, metric := range c.metrics {
+		prometheus.Unregister(metric.vec)
+	}
+}
+
+// WithFrequency determines how often the collector runs.
 func (c *collector) WithFrequency(fr int) Collector {
 	c.frequency = fr
 	return c
 }
+
+// WithMaxResults sets the max number of results to return.
 func (c *collector) WithMaxResults(max int) Collector {
 	c.maxResults = max
 	return c
 }
 
+// counterAdd adds the new value to the counter.
 func (c *collector) counterAdd(
 	vec *prometheus.CounterVec, name string, labels []string, value float64,
 ) {
@@ -267,6 +354,7 @@ func (c *collector) counterAdd(
 	c.metricsCache.Add(key, cacheValue{labels, vec, value})
 }
 
+// gaugeSet sets a gauge value.
 func (c *collector) gaugeSet(
 	vec *prometheus.GaugeVec, name string, labels []string, value float64,
 ) {

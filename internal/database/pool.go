@@ -19,7 +19,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/cockroachlabs/visus/internal/config"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
@@ -40,11 +39,12 @@ type PgxPool interface {
 }
 
 // New creates a new connection pool to the database.
-func New(ctx context.Context, cfg *config.Config) (PgxPool, error) {
+// It waits until a connection can be established, or the the context has been cancelled.
+func New(ctx context.Context, URL string) (PgxPool, error) {
 	var pool *pgxpool.Pool
 	sleepTime := int64(5)
 	for {
-		poolConfig, err := pgxpool.ParseConfig(cfg.URL)
+		poolConfig, err := pgxpool.ParseConfig(URL)
 		if err != nil {
 			log.Error(err)
 			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)

@@ -19,19 +19,18 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/cockroachlabs/visus/internal/config"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	log "github.com/sirupsen/logrus"
 )
 
 type serverImpl struct {
-	config     *config.Config
+	config     *server.Config
 	httpServer *http.Server
 }
 
 // New constructs a http server to server the metrics
-func New(ctx context.Context, cfg *config.Config) (server.Server, error) {
+func New(ctx context.Context, cfg *server.Config) (server.Server, error) {
 
 	httpServer := &http.Server{
 		Addr: cfg.BindAddr,
@@ -51,6 +50,8 @@ func New(ctx context.Context, cfg *config.Config) (server.Server, error) {
 	return server, nil
 }
 
+// Start the server and wait for new connections.
+// It uses the default prometheus handler to return the metric value to the caller.
 func (s *serverImpl) Start(ctx context.Context) error {
 	http.Handle(s.config.Endpoint, promhttp.Handler())
 	go func() {

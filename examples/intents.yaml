@@ -1,0 +1,21 @@
+name: intents
+frequency: 10
+maxresults: 100
+labels: [table_name]
+metrics:
+  - name : intent_count
+    kind : counter
+    help : number of intents.
+query: 
+  SELECT table_name, intent_count
+  FROM (
+          SELECT name as table_name,
+                 sum(
+                    (crdb_internal.range_stats(start_key)->'intent_count')::INT8
+                 ) AS intent_count
+            FROM crdb_internal.ranges_no_leases AS r
+            JOIN crdb_internal.tables AS t ON r.table_id = t.table_id
+        GROUP BY name
+       ) AS inline
+ WHERE intent_count > 0
+ LIMIT $1;
