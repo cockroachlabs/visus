@@ -7,7 +7,11 @@ metrics:
     kind : counter
     help : number of intents.
 query: 
+<<<<<<< HEAD
   SELECT table_name, intent_count
+=======
+  SELECT name, intent_count
+>>>>>>> 3771d12 (reading config from database)
   FROM (
           SELECT name as table_name,
                  sum(
