@@ -8,7 +8,7 @@ metrics:
     help : number of num_contention_events.
 query: 
     SELECT
-      database_name, schema_name, table_name, num_contention_events 
+      database_name, schema_name, table_name, num_contention_events as num_events
     FROM 
       crdb_internal.cluster_contended_tables
     LIMIT $1;

@@ -241,6 +241,7 @@ func (c *collector) Collect(ctx context.Context) error {
 		c.mu.inUse = false
 	}()
 	c.maybeInitCache()
+	c.resetGauges()
 	query := c.query
 	log.Debugf("Collect %s ", c.name)
 	log.Tracef("Collect %s query %s ", c.name, query)
@@ -395,7 +396,14 @@ func (c *collector) getKey(name string, labels []string) (string, error) {
 	}
 	return string(jsonKey), nil
 }
-
+func (c *collector) resetGauges() {
+	for _, m := range c.metrics {
+		switch metric := m.vec.(type) {
+		case *prometheus.GaugeVec:
+			metric.Reset()
+		}
+	}
+}
 func (c *collector) maybeInitCache() {
 	if c.metricsCache == nil {
 		c.metricsCache = lru.New(c.cardinality * c.maxResults * 2)
