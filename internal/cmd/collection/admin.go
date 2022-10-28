@@ -77,10 +77,10 @@ func initCmd() *cobra.Command {
 			store := store.New(pool)
 			err = store.Init(ctx)
 			if err != nil {
-				fmt.Printf("Error initializing database at %s.", databaseURL)
+				fmt.Printf("Error initializing database at %s.\n", databaseURL)
 				return err
 			}
-			fmt.Printf("Database initialized at %s", databaseURL)
+			fmt.Printf("Database initialized at %s\n", databaseURL)
 			return nil
 		},
 	}
