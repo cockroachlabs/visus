@@ -7,7 +7,7 @@ metrics:
     kind : counter
     help : number of intents.
 query: 
-  SELECT table_name, intent_count
+  SELECT table_name, intent_count as count
   FROM (
           SELECT name as table_name,
                  sum(
