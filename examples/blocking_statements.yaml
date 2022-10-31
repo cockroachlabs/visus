@@ -1,0 +1,19 @@
+name: blocking_statements
+frequency: 10
+maxresults: 100
+labels: [statement]
+metrics:
+  - name : count
+    kind : counter
+    help : number of times this statement blocked other statements.
+query: 
+  SELECT
+    encode(blocking_txn_fingerprint_id, 'hex') as statement,
+    count(*)::float AS count
+  FROM
+    crdb_internal.transaction_contention_events
+  WHERE
+     encode(blocking_txn_fingerprint_id, 'hex') != '0000000000000000' 
+  GROUP BY
+    statement
+  LIMIT $1;
