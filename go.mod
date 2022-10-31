@@ -17,10 +17,11 @@ require (
 	github.com/prometheus/client_model v0.3.0
 	github.com/prometheus/common v0.37.0
 	github.com/sirupsen/logrus v1.9.0
-	github.com/spf13/cobra v1.6.0
+	github.com/spf13/cobra v1.6.1
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
 	golang.org/x/tools v0.1.11-0.20220513221640-090b14e8501f
+	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.3.3
 )
@@ -52,5 +53,4 @@ require (
 	golang.org/x/sys v0.0.0-20220715151400-c0bba94af5f8 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20200825200019-8632dd797987 // indirect
-	google.golang.org/protobuf v1.28.1 // indirect
 )
