@@ -1,5 +1,6 @@
 
 name: sqlefficiency
+enabled: true
 frequency: 10
 maxresults: 10
 labels: []

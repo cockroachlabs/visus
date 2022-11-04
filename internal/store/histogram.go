@@ -27,6 +27,7 @@ import (
 type Histogram struct {
 	Bins         int              // Bins is the number of linear bins with a logarithm bucket.
 	Start        int              // Start is the minimun value in the histogram
+	Enabled      bool             // Enabled is true if the histogram is enabled
 	End          int              // End is the maximum value in the histogram
 	Regex        string           // Regex to match for incoming histograms to be converted.
 	LastModified pgtype.Timestamp // LastModified when the definition was updated.
@@ -70,7 +71,9 @@ func (s *store) GetHistograms(ctx context.Context) ([]Histogram, error) {
 
 	for rows.Next() {
 		var histogram Histogram
-		err := rows.Scan(&histogram.Regex, &histogram.LastModified, &histogram.Bins, &histogram.Start, &histogram.End)
+		err := rows.Scan(&histogram.Regex, &histogram.Enabled,
+			&histogram.LastModified, &histogram.Bins,
+			&histogram.Start, &histogram.End)
 		if err != nil {
 			log.Debugln(err)
 			return nil, err
@@ -91,7 +94,7 @@ func (s *store) PutHistogram(ctx context.Context, histogram *Histogram) error {
 	}
 	defer txn.Commit(ctx)
 	_, err = txn.Exec(ctx, upsertHistogramStmt,
-		histogram.Regex, histogram.Bins,
+		histogram.Regex, histogram.Enabled, histogram.Bins,
 		histogram.Start, histogram.End)
 	if err != nil {
 		log.Errorf("upsert histogram error:%s, %s", upsertHistogramStmt, err)

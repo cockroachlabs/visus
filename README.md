@@ -44,6 +44,7 @@ We would like to have at most 50 results and fetch the metrics every 10 seconds.
 
 ```yaml
 name: query_count
+enabled: true
 frequency: 10
 maxresults: 50
 labels: [application,database]
@@ -118,25 +119,13 @@ Result:
 
 ```text
 Collection: query_count
+Enabled:    false
+Updated:    2022-11-04 14:35:31.448169 +0000 UTC
 Labels:     application,database
-Query:      SELECT
-    application_name as application,
-    database_name as database,
-    sum(count) AS exec_count
-FROM
-        crdb_internal.node_statement_statistics
-WHERE
-        application_name NOT LIKE '$ internal-%'
-GROUP BY
-        application_name, database_name
-ORDER BY
-        exec_count DESC
-LIMIT
-        $1;
-
-MaxResults: 10
+Query:      SELECT application_name as application, database_name as database, sum(count) AS exec_count FROM crdb_internal.node_statement_statistics WHERE application_name NOT LIKE '$ internal-%' GROUP BY application_name, database_name ORDER BY exec_count DESC LIMIT $1;
+MaxResults: 50
 Frequency:  10 seconds
-Metrics:    [{exec_count counter statement count per application and database}]
+Metrics:    [{exec_count counter statement count per application and database.}]
 ```
 
 Test the collection, and fetch the metrics:
@@ -191,11 +180,11 @@ Usage:
 
 Available Commands:
   delete
-  test
   get
   init
   list
-  put 
+  put
+  test
 
 Flags:
   -h, --help         help for collection
@@ -218,10 +207,10 @@ Usage:
   visus histogram [command]
 
 Available Commands:
-  delete      
-  list        
-  put         
-  test        
+  delete
+  list
+  put
+  test
 
 Flags:
   -h, --help         help for histogram
@@ -237,9 +226,6 @@ Use "visus histogram [command] --help" for more information about a command.
 
 ### Starting a server
 
-To start the server, use the 'visus start' command:
-
-```text
 Usage:
   visus start [flags]
 
@@ -257,6 +243,7 @@ Flags:
       --insecure            this flag must be set if no TLS configuration is provided
       --prometheus string   prometheus endpoint
       --refresh duration    How ofter to refresh the configuration from the database. (default 5m0s)
+      --skip-rewrite        Skip rewriting histograms in a linear log10
       --url string          Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
 
 Global Flags:

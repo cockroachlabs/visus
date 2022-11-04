@@ -102,5 +102,6 @@ func Command() *cobra.Command {
 	f.StringVar(&cfg.URL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	f.StringVar(&cfg.Prometheus, "prometheus", "", "prometheus endpoint")
+	f.BoolVar(&cfg.SkipRewrite, "skip-rewrite", false, "Skip rewriting histograms in a linear log10")
 	return c
 }

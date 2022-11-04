@@ -77,16 +77,21 @@ func (s *serverImpl) Start(ctx context.Context) error {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		if s.config.Prometheus != "" {
-			translators := make([]translator.Translator, 0)
-			for _, h := range s.histograms {
-				hnew, err := translator.New(h)
-				if err != nil {
-					s.errorResponse(w, "Error translating histograms", err)
-					return
+			var translators []translator.Translator
+			if !s.config.SkipRewrite {
+				translators = make([]translator.Translator, 0)
+				for _, h := range s.histograms {
+					if !h.Enabled {
+						continue
+					}
+					hnew, err := translator.New(h)
+					if err != nil {
+						s.errorResponse(w, "Error translating histograms", err)
+						return
+					}
+					translators = append(translators, hnew)
 				}
-				translators = append(translators, hnew)
 			}
-
 			tlsConfig, err := s.config.GetTLSClientConfig()
 			if err != nil {
 				s.errorResponse(w, "Error setting up secure connection", err)
@@ -109,7 +114,6 @@ func (s *serverImpl) Start(ctx context.Context) error {
 				s.errorResponse(w, "Error gathering metrics", err)
 			}
 		}
-
 	})
 
 	http.Handle(s.config.Endpoint, gziphandler.GzipHandler(handler))

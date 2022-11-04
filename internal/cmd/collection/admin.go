@@ -137,6 +137,9 @@ func testCmd() *cobra.Command {
 			if coll == nil {
 				fmt.Printf("Collection %s not found\n", collectionName)
 			} else {
+				if !coll.Enabled {
+					fmt.Printf("\nPlease note: Collection is not enabled\n\n")
+				}
 				collector := collector.New(coll.Name, coll.Labels, coll.Query, pool).
 					WithMaxResults(coll.MaxResult)
 				for _, m := range coll.Metrics {

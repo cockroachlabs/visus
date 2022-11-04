@@ -200,7 +200,7 @@ func (s *store) PutCollection(ctx context.Context, collection *Collection) error
 		return err
 	}
 	_, err = txn.Exec(ctx, upsertCollectionStmt,
-		collection.Name, collection.Scope, collection.MaxResult,
+		collection.Name, collection.Enabled, collection.Scope, collection.MaxResult,
 		collection.Frequency, collection.Query, collection.Labels)
 	if err != nil {
 		log.Errorf("upsert collection error:%s, %s", upsertCollectionStmt, err)
@@ -223,13 +223,14 @@ func (s *store) PutCollection(ctx context.Context, collection *Collection) error
 // TODO (silvano): clean up
 func (c *Collection) String() string {
 	return fmt.Sprintf(`Collection: %s
+Enabled:    %t
 Updated:    %s
 Labels:     %s
 Query:      %s
 MaxResults: %d
 Frequency:  %d seconds
 Metrics:    %v`,
-		c.Name, c.LastModified.Time, strings.Join(c.Labels, ","),
+		c.Name, c.Enabled, c.LastModified.Time, strings.Join(c.Labels, ","),
 		c.Query, c.MaxResult,
 		c.Frequency.Microseconds/(1000*1000), c.Metrics)
 }

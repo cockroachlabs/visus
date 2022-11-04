@@ -29,9 +29,10 @@ import (
 
 // params used by the put command to store a new configuration in the database.
 type params struct {
-	bins  int
-	start int
-	end   int
+	bins    int
+	disable bool
+	end     int
+	start   int
 }
 
 var databaseURL = ""
@@ -128,7 +129,7 @@ func putCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "put",
 		Args:    cobra.ExactArgs(1),
-		Example: `./visus histogram put regex --start 1000000 --end 20000000000  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		Example: `./visus histogram put "^sql_exec_latency$"  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			regex := args[0]
 			ctx := cmd.Context()
@@ -137,10 +138,11 @@ func putCmd() *cobra.Command {
 				return err
 			}
 			histogram := &store.Histogram{
-				Regex: regex,
-				Bins:  params.bins,
-				Start: params.start,
-				End:   params.end,
+				Bins:    params.bins,
+				Enabled: !params.disable,
+				End:     params.end,
+				Regex:   regex,
+				Start:   params.start,
 			}
 			store := store.New(pool)
 			err = store.PutHistogram(ctx, histogram)
@@ -153,6 +155,7 @@ func putCmd() *cobra.Command {
 		},
 	}
 	f := c.Flags()
+	f.BoolVar(&params.disable, "disable", false, "disable the rewriting rule")
 	f.IntVar(&params.bins, "bins", 10, "number of linear bins")
 	f.IntVar(&params.start, "start", 1000000, "histogram starting value")
 	f.IntVar(&params.end, "end", 20000000000, "histogram ending value")

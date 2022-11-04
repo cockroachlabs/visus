@@ -31,7 +31,7 @@ func WriteMetrics(
 	out io.Writer,
 ) error {
 	for _, mf := range metricFamilies {
-		if mf.GetType() == dto.MetricType_HISTOGRAM {
+		if mf.GetType() == dto.MetricType_HISTOGRAM && translators != nil {
 			for _, histogram := range translators {
 				histogram.Translate(ctx, mf, out)
 			}

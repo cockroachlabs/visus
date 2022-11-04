@@ -31,7 +31,8 @@ type Config struct {
 	Endpoint          string        // Endpoint for metrics
 	Insecure          bool          // Sanity check to ensure that the operator really means it.
 	Prometheus        string        // URL for the node prometheus endpoint
-	Refresh           time.Duration // how often to refresh the configuration.
+	Refresh           time.Duration // How often to refresh the configuration.
+	SkipRewrite       bool          // Whether histograms needs to be rewritten.
 	URL               string        // URL to connect to the database
 }
 
