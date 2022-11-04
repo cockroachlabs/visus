@@ -1,4 +1,5 @@
 name: blocking_statements
+enabled: true
 frequency: 10
 maxresults: 100
 labels: [statement]
