@@ -178,7 +178,7 @@ func TestPutCollection(t *testing.T) {
 			WillReturnResult(pgxmock.NewResult("DELETE", 0))
 		mock.ExpectExec(
 			`UPSERT INTO _visus.collection \(name, enabled, scope, maxResults, frequency, query, labels, updated\) VALUES .+`).
-			WithArgs(tt.collection.Name, tt.collection.Scope,
+			WithArgs(tt.collection.Name, tt.collection.Enabled, tt.collection.Scope,
 				tt.collection.MaxResult, tt.collection.Frequency, tt.collection.Query,
 				tt.collection.Labels).
 			WillReturnResult(pgxmock.NewResult("UPDATE", 1))

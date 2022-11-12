@@ -1,9 +1,8 @@
-CREATE ROLE IF NOT EXISTS visus;
-ALTER USER visus WITH VIEWACTIVITY;
-
 CREATE DATABASE IF NOT EXISTS _visus;
 
-GRANT CONNECT ON DATABASE _visus to visus;
+CREATE ROLE IF NOT EXISTS visus_role;
+ALTER ROLE visus_role WITH VIEWACTIVITY;
+GRANT CONNECT ON DATABASE _visus to visus_role;
 
 USE _visus;
 
@@ -36,11 +35,12 @@ CREATE TABLE IF NOT EXISTS _visus.metric (
 
 
 CREATE TABLE IF NOT EXISTS _visus.histogram (
+    name         STRING NOT NULL,
     regex        STRING NOT NULL,
     updated    timestamptz DEFAULT current_timestamp (), 
     bins         INT NOT NULL,
     "start"      INT NOT NULL,
     "end"        INT NOT NULL,
     enabled      BOOL DEFAULT true,
-    PRIMARY KEY (regex)
+    PRIMARY KEY (name)
 );

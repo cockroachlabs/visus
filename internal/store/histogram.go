@@ -25,6 +25,8 @@ import (
 // Histogram stores the properties for a histogram definition.
 // Matching histograms will be converted into linear log10 histograms.
 type Histogram struct {
+	Enabled      bool             // Enabled is true if the histograms needs to be translated.
+	Name         string           // Name of the config rule
 	Bins         int              // Bins is the number of linear bins with a logarithm bucket.
 	Start        int              // Start is the minimun value in the histogram
 	End          int              // End is the maximum value in the histogram
@@ -32,7 +34,11 @@ type Histogram struct {
 	LastModified pgtype.Timestamp // LastModified when the definition was updated.
 }
 
+//go:embed sql/getHistogram.sql
+var getHistogramStmt string
+
 //go:embed sql/listHistograms.sql
+
 var listHistogramsStmt string
 
 //go:embed sql/upsertHistogram.sql
@@ -59,23 +65,46 @@ func (s *store) DeleteHistogram(ctx context.Context, regex string) error {
 }
 
 // GetHistograms retrieves all the histograms stored in the database.
-func (s *store) GetHistograms(ctx context.Context) ([]Histogram, error) {
-	rows, err := s.pool.Query(ctx, listHistogramsStmt)
+func (s *store) GetHistogram(ctx context.Context, name string) (*Histogram, error) {
+	rows, err := s.pool.Query(ctx, getHistogramStmt, name)
 	if err != nil {
-		log.Errorf("GetHistograms %s ", err.Error())
+		log.Errorf("GetHistogram %s ", err.Error())
 		return nil, err
 	}
 	defer rows.Close()
-	res := make([]Histogram, 0)
-
-	for rows.Next() {
-		var histogram Histogram
-		err := rows.Scan(&histogram.Regex, &histogram.LastModified, &histogram.Bins, &histogram.Start, &histogram.End)
+	if rows.Next() {
+		histogram := &Histogram{}
+		err := rows.Scan(
+			&histogram.Name, &histogram.Regex,
+			&histogram.LastModified, &histogram.Enabled,
+			&histogram.Bins, &histogram.Start, &histogram.End)
 		if err != nil {
 			log.Debugln(err)
 			return nil, err
 		}
-		res = append(res, histogram)
+		return histogram, nil
+	}
+	return nil, err
+}
+
+// GetHistograms retrieves all the histograms stored in the database.
+func (s *store) GetHistogramNames(ctx context.Context) ([]string, error) {
+	rows, err := s.pool.Query(ctx, listHistogramsStmt)
+	if err != nil {
+		log.Errorf("GetHistogramNames %s ", err.Error())
+		return nil, err
+	}
+	defer rows.Close()
+	res := make([]string, 0)
+
+	for rows.Next() {
+		var name string
+		err := rows.Scan(&name)
+		if err != nil {
+			log.Debugln(err)
+			return nil, err
+		}
+		res = append(res, name)
 	}
 	return res, nil
 }
@@ -91,6 +120,7 @@ func (s *store) PutHistogram(ctx context.Context, histogram *Histogram) error {
 	}
 	defer txn.Commit(ctx)
 	_, err = txn.Exec(ctx, upsertHistogramStmt,
+		histogram.Name,
 		histogram.Regex, histogram.Bins,
 		histogram.Start, histogram.End)
 	if err != nil {

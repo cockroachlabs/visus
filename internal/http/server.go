@@ -58,11 +58,19 @@ func New(
 }
 
 func (s *serverImpl) Refresh(ctx context.Context) error {
-	histograms, err := s.store.GetHistograms(ctx)
+	names, err := s.store.GetHistogramNames(ctx)
 	if err != nil {
-		return nil
+		return err
 	}
-	s.histograms = histograms
+	s.histograms = nil
+	for _, name := range names {
+		histogram, err := s.store.GetHistogram(ctx, name)
+		if err != nil {
+			return err
+		}
+		s.histograms = append(s.histograms, *histogram)
+	}
+
 	return nil
 }
 

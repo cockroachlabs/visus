@@ -18,12 +18,15 @@ package collection
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/cockroachlabs/visus/internal/collector"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/creasty/defaults"
 	"github.com/jackc/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
@@ -31,12 +34,50 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// params used by the put command to store a new configuration in the database.
-type params struct {
-	yaml string
+var (
+	databaseURL           = ""
+	microsecondsPerSecond = int64(math.Pow10(6))
+)
+
+// metricDef yaml metric definition
+type metricDef struct {
+	Name string
+	Kind string
+	Help string
 }
 
-var databaseURL = ""
+// config yaml collection definition
+type config struct {
+	Name       string
+	Frequency  int
+	MaxResults int
+	Enabled    bool `default:"true"`
+	Query      string
+	Labels     []string
+	Metrics    []metricDef
+}
+
+func marshal(collection *store.Collection) ([]byte, error) {
+	metrics := make([]metricDef, 0)
+	for _, m := range collection.Metrics {
+		metric := metricDef{
+			Name: m.Name,
+			Kind: string(m.Kind),
+			Help: m.Help,
+		}
+		metrics = append(metrics, metric)
+	}
+	config := &config{
+		Name:       collection.Name,
+		Frequency:  int(collection.Frequency.Microseconds / microsecondsPerSecond),
+		MaxResults: collection.MaxResult,
+		Enabled:    collection.Enabled,
+		Query:      collection.Query,
+		Labels:     collection.Labels,
+		Metrics:    metrics,
+	}
+	return yaml.Marshal(config)
+}
 
 // listCmd list all the collections in the datababse
 func listCmd() *cobra.Command {
@@ -56,7 +97,7 @@ func listCmd() *cobra.Command {
 				return err
 			}
 			for _, coll := range collections {
-				fmt.Printf("Collection: %s\n", coll)
+				fmt.Printf("%s\n", coll)
 			}
 			return nil
 		},
@@ -108,7 +149,11 @@ func getCmd() *cobra.Command {
 			if collection == nil {
 				fmt.Printf("Collection %s not found\n", collectionName)
 			} else {
-				fmt.Println(collection)
+				res, err := marshal(collection)
+				if err != nil {
+					fmt.Printf("Unabled to marshall %s\n", collectionName)
+				}
+				fmt.Println(string(res))
 			}
 			return nil
 		},
@@ -117,10 +162,12 @@ func getCmd() *cobra.Command {
 }
 
 func testCmd() *cobra.Command {
+	var interval time.Duration
+	var count int
 	c := &cobra.Command{
 		Use:     "test",
 		Args:    cobra.ExactArgs(1),
-		Example: `./visus collection fetch collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		Example: `./visus collection test collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
@@ -147,22 +194,36 @@ func testCmd() *cobra.Command {
 						collector.AddCounter(m.Name, m.Help)
 					}
 				}
-				collector.Collect(ctx)
-				gathering, err := prometheus.DefaultGatherer.Gather()
-				if err != nil {
-					fmt.Printf("Error collecting metrics %s.", err)
-					return err
-				}
-				for _, mf := range gathering {
-					if strings.HasPrefix(*mf.Name, collectionName) {
-						expfmt.MetricFamilyToText(os.Stdout, mf)
-
+				for i := 1; i <= count || count == 0; i++ {
+					if i > 1 {
+						select {
+						case <-ctx.Done():
+							return ctx.Err()
+						case <-time.After(interval):
+						}
 					}
+					fmt.Printf("\n---- %s %s -----\n", time.Now().Format("01-02-2006 15:04:05"), coll.Name)
+					collector.Collect(ctx)
+					gathering, err := prometheus.DefaultGatherer.Gather()
+					if err != nil {
+						fmt.Printf("Error collecting metrics %s.", err)
+						return err
+					}
+					for _, mf := range gathering {
+						if strings.HasPrefix(*mf.Name, collectionName) {
+							expfmt.MetricFamilyToText(os.Stdout, mf)
+
+						}
+					}
+
 				}
 			}
 			return nil
 		},
 	}
+	f := c.Flags()
+	f.DurationVar(&interval, "interval", 10*time.Second, "interval of collection")
+	f.IntVar(&count, "count", 1, "number of times to run the collection. Specify 0 for continuos collection")
 	return c
 }
 
@@ -191,40 +252,22 @@ func deleteCmd() *cobra.Command {
 	return c
 }
 
-// metricDef yaml metric definition
-type metricDef struct {
-	Name string
-	Kind string
-	Help string
-}
-
-// config yaml collection definition
-type config struct {
-	Name       string
-	Frequency  int
-	MaxResults int
-	Enabled    bool `default:"true"`
-	Query      string
-	Labels     []string
-	Metrics    []metricDef
-}
-
 func putCmd() *cobra.Command {
-	params := &params{}
+	var file string
 	c := &cobra.Command{
 		Use:     "put",
 		Args:    cobra.ExactArgs(0),
 		Example: `./visus collection put --yaml config.yaml --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			if params.yaml == "" {
+			if file == "" {
 				return errors.New("yaml configuration required")
 			}
 			pool, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			data, err := os.ReadFile(params.yaml)
+			data, err := os.ReadFile(file)
 			if err != nil {
 				return err
 			}
@@ -233,7 +276,9 @@ func putCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-
+			if err := defaults.Set(config); err != nil {
+				return err
+			}
 			metrics := make([]store.Metric, 0)
 			for _, m := range config.Metrics {
 				metrics = append(metrics, store.Metric{
@@ -247,7 +292,7 @@ func putCmd() *cobra.Command {
 				Enabled:   config.Enabled,
 				Scope:     store.Local,
 				MaxResult: config.MaxResults,
-				Frequency: pgtype.Interval{Status: pgtype.Present, Microseconds: int64(config.Frequency) * (1000 * 1000)},
+				Frequency: pgtype.Interval{Status: pgtype.Present, Microseconds: int64(config.Frequency) * microsecondsPerSecond},
 				Query:     config.Query,
 				Labels:    config.Labels,
 				Metrics:   metrics,
@@ -263,7 +308,7 @@ func putCmd() *cobra.Command {
 		},
 	}
 	f := c.Flags()
-	f.StringVar(&params.yaml, "yaml", "", "file containing the configuration")
+	f.StringVar(&file, "yaml", "", "file containing the configuration")
 	return c
 }
 
