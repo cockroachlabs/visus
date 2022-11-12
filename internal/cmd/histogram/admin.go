@@ -16,25 +16,71 @@
 package histogram
 
 import (
+	"errors"
 	"fmt"
-	"log"
 	"os"
 
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/http"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
+	"github.com/creasty/defaults"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
-// params used by the put command to store a new configuration in the database.
-type params struct {
-	bins  int
-	start int
-	end   int
+var databaseURL = ""
+
+type config struct {
+	Enabled bool `default:"true"`
+	Name    string
+	Bins    int `default:"10"`
+	Start   int `default:"1000000"`
+	End     int `default:"20000000000"`
+	Regex   string
 }
 
-var databaseURL = ""
+func getCmd() *cobra.Command {
+	c := &cobra.Command{
+		Use:     "get",
+		Args:    cobra.ExactArgs(1),
+		Example: `./visus histogram get histogram_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			name := args[0]
+			pool, err := database.New(ctx, databaseURL)
+			if err != nil {
+				return err
+			}
+			store := store.New(pool)
+			histogram, err := store.GetHistogram(ctx, name)
+			if err != nil {
+				fmt.Printf("Error retrieving histogram %s.", name)
+				return err
+			}
+			if histogram == nil {
+				fmt.Printf("Histogram %s not found\n", name)
+			} else {
+				out, err := yaml.Marshal(config{
+					Enabled: histogram.Enabled,
+					Name:    histogram.Name,
+					Bins:    histogram.Bins,
+					Start:   histogram.Start,
+					End:     histogram.End,
+					Regex:   histogram.Regex,
+				})
+				if err != nil {
+					fmt.Println(err)
+					return err
+				}
+				fmt.Println(string(out))
+			}
+			return nil
+		},
+	}
+	return c
+}
 
 func listCmd() *cobra.Command {
 	c := &cobra.Command{
@@ -47,13 +93,13 @@ func listCmd() *cobra.Command {
 				return err
 			}
 			store := store.New(pool)
-			histograms, err := store.GetHistograms(ctx)
+			names, err := store.GetHistogramNames(ctx)
 			if err != nil {
 				fmt.Print("Error retrieving collections")
 				return err
 			}
-			for _, histogram := range histograms {
-				fmt.Printf("Histogram: %+v\n", histogram)
+			for _, name := range names {
+				fmt.Println(name)
 			}
 			return nil
 		},
@@ -79,7 +125,7 @@ func deleteCmd() *cobra.Command {
 				fmt.Printf("Error deleting histogram %s.\n", regex)
 				return err
 			}
-			fmt.Printf("Collection %s histogram.\n", regex)
+			fmt.Printf("Deleted %s histogram.\n", regex)
 			return nil
 		},
 	}
@@ -98,14 +144,19 @@ func testCmd() *cobra.Command {
 				return err
 			}
 			store := store.New(pool)
-			histograms, err := store.GetHistograms(ctx)
+			names, err := store.GetHistogramNames(ctx)
 			if err != nil {
-				fmt.Print("Error retrieving collections")
+				fmt.Print("Error retrieving histograms")
 				return err
 			}
 			translators := make([]translator.Translator, 0)
-			for _, h := range histograms {
-				hnew, err := translator.New(h)
+			for _, n := range names {
+				h, err := store.GetHistogram(ctx, n)
+				if err != nil {
+					fmt.Print("Error retrieving histogram")
+					return err
+				}
+				hnew, err := translator.New(*h)
 				if err != nil {
 					log.Fatal(err)
 				}
@@ -124,38 +175,51 @@ func testCmd() *cobra.Command {
 }
 
 func putCmd() *cobra.Command {
-	params := &params{}
+	var file string
 	c := &cobra.Command{
 		Use:     "put",
-		Args:    cobra.ExactArgs(1),
-		Example: `./visus histogram put regex --start 1000000 --end 20000000000  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		Args:    cobra.NoArgs,
+		Example: `./visus histogram put -yaml config  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			regex := args[0]
 			ctx := cmd.Context()
+			if file == "" {
+				return errors.New("yaml configuration required")
+			}
 			pool, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			histogram := &store.Histogram{
-				Regex: regex,
-				Bins:  params.bins,
-				Start: params.start,
-				End:   params.end,
-			}
-			store := store.New(pool)
-			err = store.PutHistogram(ctx, histogram)
+			data, err := os.ReadFile(file)
 			if err != nil {
-				fmt.Printf("Error inserting histogram %s.", regex)
 				return err
 			}
-			fmt.Printf("histogram %s inserted.\n", regex)
+			config := &config{}
+			err = yaml.Unmarshal(data, &config)
+			if err != nil {
+				return err
+			}
+			if err := defaults.Set(config); err != nil {
+				return err
+			}
+			st := store.New(pool)
+			err = st.PutHistogram(ctx, &store.Histogram{
+				Enabled: config.Enabled,
+				Name:    config.Name,
+				Bins:    config.Bins,
+				Start:   config.Start,
+				End:     config.End,
+				Regex:   config.Regex,
+			})
+			if err != nil {
+				fmt.Printf("Error inserting histogram %s.", config.Name)
+				return err
+			}
+			fmt.Printf("histogram %s inserted.\n", config.Name)
 			return nil
 		},
 	}
 	f := c.Flags()
-	f.IntVar(&params.bins, "bins", 10, "number of linear bins")
-	f.IntVar(&params.start, "start", 1000000, "histogram starting value")
-	f.IntVar(&params.end, "end", 20000000000, "histogram ending value")
+	f.StringVar(&file, "yaml", "", "yaml config")
 	return c
 }
 
@@ -165,7 +229,7 @@ func Command() *cobra.Command {
 		Use: "histogram",
 	}
 	f := c.PersistentFlags()
-	c.AddCommand(listCmd(), deleteCmd(), putCmd(), testCmd())
+	c.AddCommand(getCmd(), listCmd(), deleteCmd(), putCmd(), testCmd())
 	f.StringVar(&databaseURL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	return c

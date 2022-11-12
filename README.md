@@ -84,7 +84,15 @@ Initialize the database that contains the configuration for the collections:
 ./visus collection init --url "$ADMIN_CRDB_URL" 
 ```
 
-Then, we can create a new collection in the database using the `visus put` command. 
+For this example, we use the `visus` user, with the following privileges:
+
+```sql
+CREATE USER IF NOT EXISTS visus;
+ALTER ROLE visus WITH VIEWACTIVITY;
+GRANT CONNECT ON DATABASE _visus to visus;
+```
+
+Now, we can create a new collection in the database using the `visus put` command. 
 
 ```bash
 ./visus collection put --url "$ADMIN_CRDB_URL" --yaml query_count.yaml 
@@ -105,7 +113,7 @@ List all the collection names in the database:
 Result:
 
 ```text
-Collection: query_count
+query_count
 ```
 
 View the query_count collection definition:
@@ -117,40 +125,40 @@ View the query_count collection definition:
 Result:
 
 ```text
-Collection: query_count
-Labels:     application,database
-Query:      SELECT
-    application_name as application,
-    database_name as database,
-    sum(count) AS exec_count
-FROM
-        crdb_internal.node_statement_statistics
-WHERE
-        application_name NOT LIKE '$ internal-%'
-GROUP BY
-        application_name, database_name
-ORDER BY
-        exec_count DESC
-LIMIT
-        $1;
-
-MaxResults: 10
-Frequency:  10 seconds
-Metrics:    [{exec_count counter statement count per application and database}]
+name: query_count
+frequency: 10
+maxresults: 100
+enabled: true
+query: SELECT application_name as application, database_name as database, sum(count) AS exec_count FROM crdb_internal.node_statement_statistics WHERE application_name NOT LIKE '$ internal-%' GROUP BY application_name, database_name ORDER BY exec_count DESC LIMIT $1;
+labels:
+    - application
+    - database
+metrics:
+    - name: exec_count
+      kind: counter
+      help: statement count per application and database.
 ```
 
-Test the collection, and fetch the metrics:
+Test the collection, and fetch the metrics twice, with default interval (10 seconds):
 
 ```bash
-./visus collection test query_count --url "$VISUS_CRDB_URL"
+./visus collection test query_count --url "$VISUS_CRDB_URL" --count 2
 ```
 
 Sample results:
 
 ```text
-# HELP query_count_exec_count statement count per application and database
+---- 11-12-2022 17:03:09 query_count -----
+# HELP query_count_exec_count statement count per application and database.
 # TYPE query_count_exec_count counter
-query_count_exec_count{application="",database="defaultdb"} 11
+query_count_exec_count{application="",database="_visus"} 7
+query_count_exec_count{application="",database="defaultdb"} 16
+
+---- 11-12-2022 17:03:19 query_count -----
+# HELP query_count_exec_count statement count per application and database.
+# TYPE query_count_exec_count counter
+query_count_exec_count{application="",database="_visus"} 7
+query_count_exec_count{application="",database="defaultdb"} 17
 ```
 
 Start the server to enable collection of metrics from Prometheus.
@@ -162,13 +170,23 @@ Start the server to enable collection of metrics from Prometheus.
 ## Histogram rewriting
 
 Visus can also act as a proxy to filter and rewrite CockroachDB histograms (v22.1 and earlier) from a log-2 linear format (HDR histograms) to a log-10 linear format. 
-Users can specify which histograms to rewrite based on a regular expression. For instance to rewrite all the histograms that match "^sql_exec_latency$" and keep buckets between 1ms and 20sec:
+Users can specify which histograms to rewrite based on a regular expression. For instance to rewrite all the histograms that match "^sql_exec_latency$" and keep buckets between 1ms and 20sec, we specify in the configuration file `latency.yaml`:
+```yaml
+name: latency
+regex: ^sql_exec_latency$
+enabled: true
+start: 1000000
+end: 20000000000
+```
 
 ```bash
-./visus histogram put "^sql_exec_latency$" \
-   --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" \
-   --start 1000000 \
-   --end   20000000000 
+./visus histogram put --yaml latency.yaml  --url "$ADMIN_CRDB_URL" 
+```
+
+Result:
+
+```text
+histogram latency inserted.
 ```
 
 To enable filter in the server,
@@ -190,12 +208,12 @@ Usage:
   visus collection [command]
 
 Available Commands:
-  delete
-  test
-  get
-  init
-  list
-  put 
+  delete      
+  get         
+  init        
+  list        
+  put         
+  test        
 
 Flags:
   -h, --help         help for collection
@@ -219,6 +237,7 @@ Usage:
 
 Available Commands:
   delete      
+  get         
   list        
   put         
   test        

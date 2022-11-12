@@ -33,7 +33,9 @@ type Store interface {
 	// GetCollectionNames returns the collection names present in the store.
 	GetCollectionNames(ctx context.Context) ([]string, error)
 	// GetHistograms returns the histograms from the database.
-	GetHistograms(ctx context.Context) ([]Histogram, error)
+	GetHistogram(ctx context.Context, name string) (*Histogram, error)
+	// GetHistograms returns the histograms from the database.
+	GetHistogramNames(ctx context.Context) ([]string, error)
 	// GetMetrics returns the metrics associated to a collection.
 	GetMetrics(ctx context.Context, name string) ([]Metric, error)
 	// GetPool returns the underlying database connection pool

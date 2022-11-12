@@ -1,1 +1,1 @@
-select regex, updated, bins, "start", "end" from _visus.histogram;
+select "name" from _visus.histogram;
