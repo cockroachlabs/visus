@@ -99,6 +99,8 @@ func Command() *cobra.Command {
 	f.StringVar(&cfg.Endpoint, "endpoint", "/_status/vars",
 		"Endpoint for metrics.")
 	f.BoolVar(&cfg.Insecure, "insecure", false, "this flag must be set if no TLS configuration is provided")
+	f.BoolVar(&cfg.ProcMetrics, "proc-metrics", false, "enable the collection of process metrics")
+	f.BoolVar(&cfg.VisusMetrics, "visus-metrics", false, "enable the collection of visus metrics")
 	f.StringVar(&cfg.URL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	f.StringVar(&cfg.Prometheus, "prometheus", "", "prometheus endpoint")

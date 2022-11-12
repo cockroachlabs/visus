@@ -33,6 +33,8 @@ type Config struct {
 	Prometheus        string        // URL for the node prometheus endpoint
 	Refresh           time.Duration // how often to refresh the configuration.
 	URL               string        // URL to connect to the database
+	ProcMetrics       bool          // Enable collections of process metrics.
+	VisusMetrics      bool          // Enable collection of visus metrics.
 }
 
 // GetTLSClientConfig returns the TLS configuration to use for outgoing http connections.
