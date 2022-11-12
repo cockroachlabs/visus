@@ -24,6 +24,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -34,23 +35,71 @@ type scheduledJob struct {
 
 // Config defines the metrics to be retrieved from the metricsServer
 type metricsServer struct {
-	config        *server.Config
-	store         store.Store
-	scheduledJobs map[string]*scheduledJob
-	scheduler     *gocron.Scheduler
-	registry      *prometheus.Registry
+	config           *server.Config
+	store            store.Store
+	scheduledJobs    map[string]*scheduledJob
+	scheduler        *gocron.Scheduler
+	registry         *prometheus.Registry
+	collectorCount   *prometheus.CounterVec
+	collectorErrors  *prometheus.CounterVec
+	collectorLatency *prometheus.HistogramVec
 }
 
 // New creates a new server to collect the metrics.
 func New(
 	ctx context.Context, cfg *server.Config, store store.Store, registry *prometheus.Registry,
 ) server.Server {
+	var collectorCounts, collectorErrors *prometheus.CounterVec
+	var collectorLatency *prometheus.HistogramVec
+	if cfg.VisusMetrics {
+		labels := []string{"collector"}
+		collectorCounts = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "visus_collector_count",
+				Help: "number of times a collector has been executed",
+			},
+			labels,
+		)
+		err := registry.Register(collectorCounts)
+		if err != nil {
+			log.Panicf("Unable to register metric %e", err)
+		}
+		collectorErrors = prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "visus_collector_errors",
+				Help: "number of errors in collector executions",
+			},
+			labels,
+		)
+		err = registry.Register(collectorErrors)
+		if err != nil {
+			log.Panicf("Unable to register metric %e", err)
+		}
+		collectorLatency = prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "visus_collector_latency",
+				Help:    "amount of time in milliseconds elapsed to run a collector",
+				Buckets: prometheus.ExponentialBucketsRange(1, 1000, 8),
+			},
+			labels,
+		)
+		err = registry.Register(collectorLatency)
+		if err != nil {
+			log.Panicf("Unable to register metric %e", err)
+		}
+	}
+	if cfg.ProcMetrics {
+		registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
+	}
 	server := &metricsServer{
-		config:        cfg,
-		store:         store,
-		scheduler:     gocron.NewScheduler(time.UTC),
-		scheduledJobs: make(map[string]*scheduledJob),
-		registry:      registry,
+		config:           cfg,
+		store:            store,
+		collectorCount:   collectorCounts,
+		collectorErrors:  collectorErrors,
+		collectorLatency: collectorLatency,
+		scheduler:        gocron.NewScheduler(time.UTC),
+		scheduledJobs:    make(map[string]*scheduledJob),
+		registry:         registry,
 	}
 	return server
 }
@@ -98,10 +147,20 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 		log.Infof("Scheduling collector %s every %d seconds", collctr.String(), collctr.GetFrequency())
 		job, err := m.scheduler.Every(collctr.GetFrequency()).Second().
 			Do(func(collctr collector.Collector) {
-				log.Debugf("Running collector %s", collctr.String())
+				name := collctr.String()
+				log.Debugf("Running collector %s", name)
+				start := time.Now()
 				err := collctr.Collect(ctx)
 				if err != nil {
+					if m.collectorErrors != nil {
+						m.collectorErrors.WithLabelValues(name).Inc()
+					}
 					log.Errorf("collector %s: %s", collctr, err.Error())
+				}
+				if m.collectorCount != nil {
+					elapsed := time.Since(start).Milliseconds()
+					m.collectorLatency.WithLabelValues(name).Observe(float64(elapsed))
+					m.collectorCount.WithLabelValues(name).Inc()
 				}
 			}, collctr)
 		if err != nil {
