@@ -49,11 +49,11 @@ func getCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			name := args[0]
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			histogram, err := store.GetHistogram(ctx, name)
 			if err != nil {
 				fmt.Printf("Error retrieving histogram %s.", name)
@@ -88,11 +88,11 @@ func listCmd() *cobra.Command {
 		Example: `./visus histogram list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			names, err := store.GetHistogramNames(ctx)
 			if err != nil {
 				fmt.Print("Error retrieving collections")
@@ -115,11 +115,11 @@ func deleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			regex := args[0]
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			err = store.DeleteHistogram(ctx, regex)
 			if err != nil {
 				fmt.Printf("Error deleting histogram %s.\n", regex)
@@ -139,11 +139,11 @@ func testCmd() *cobra.Command {
 		Example: `./visus histogram test --prometheus http://localhost:8080/_status/vars  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			names, err := store.GetHistogramNames(ctx)
 			if err != nil {
 				fmt.Print("Error retrieving histograms")
@@ -166,7 +166,7 @@ func testCmd() *cobra.Command {
 			if err != nil {
 				log.Fatal(err)
 			}
-			return http.WriteMetrics(ctx, metricsIn, translators, os.Stdout)
+			return http.WriteMetrics(ctx, metricsIn, true, translators, os.Stdout)
 		},
 	}
 	f := c.Flags()
@@ -185,7 +185,7 @@ func putCmd() *cobra.Command {
 			if file == "" {
 				return errors.New("yaml configuration required")
 			}
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -201,7 +201,7 @@ func putCmd() *cobra.Command {
 			if err := defaults.Set(config); err != nil {
 				return err
 			}
-			st := store.New(pool)
+			st := store.New(conn)
 			err = st.PutHistogram(ctx, &store.Histogram{
 				Enabled: config.Enabled,
 				Name:    config.Name,

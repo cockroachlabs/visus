@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/cockroachlabs/visus/internal/collector"
+	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
@@ -36,6 +37,7 @@ type scheduledJob struct {
 // Config defines the metrics to be retrieved from the metricsServer
 type metricsServer struct {
 	config           *server.Config
+	conn             database.Connection
 	store            store.Store
 	scheduledJobs    map[string]*scheduledJob
 	scheduler        *gocron.Scheduler
@@ -47,7 +49,11 @@ type metricsServer struct {
 
 // New creates a new server to collect the metrics.
 func New(
-	ctx context.Context, cfg *server.Config, store store.Store, registry *prometheus.Registry,
+	ctx context.Context,
+	cfg *server.Config,
+	store store.Store,
+	conn database.Connection,
+	registry *prometheus.Registry,
 ) server.Server {
 	var collectorCounts, collectorErrors *prometheus.CounterVec
 	var collectorLatency *prometheus.HistogramVec
@@ -93,6 +99,7 @@ func New(
 	}
 	server := &metricsServer{
 		config:           cfg,
+		conn:             conn,
 		store:            store,
 		collectorCount:   collectorCounts,
 		collectorErrors:  collectorErrors,
@@ -139,7 +146,7 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 			log.Debugf("Already scheduled %s, removing", coll.Name)
 			m.scheduler.RemoveByReference(existing.job)
 		}
-		collctr, err := collector.FromCollection(coll, m.store.GetPool(), m.registry)
+		collctr, err := collector.FromCollection(coll, m.conn, m.registry)
 		if err != nil {
 			log.Errorf("Error scheduling collector %s: %s", name, err.Error())
 			continue
@@ -150,7 +157,7 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 				name := collctr.String()
 				log.Debugf("Running collector %s", name)
 				start := time.Now()
-				err := collctr.Collect(ctx)
+				err := collctr.Collect(ctx, m.conn)
 				if err != nil {
 					if m.collectorErrors != nil {
 						m.collectorErrors.WithLabelValues(name).Inc()

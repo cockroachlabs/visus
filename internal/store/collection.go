@@ -89,7 +89,7 @@ var deleteMetricsStmt string
 
 // DeleteCollection removes a collection configuration and associated metrics from the database.
 func (s *store) DeleteCollection(ctx context.Context, name string) error {
-	txn, err := s.pool.Begin(ctx)
+	txn, err := s.conn.Begin(ctx)
 	if err != nil {
 		log.Debugln(err)
 		return err
@@ -112,7 +112,7 @@ func (s *store) DeleteCollection(ctx context.Context, name string) error {
 
 // GetCollectionNames retrieves all the collection names stored in the database.
 func (s *store) GetCollectionNames(ctx context.Context) ([]string, error) {
-	rows, err := s.pool.Query(ctx, listCollectionsStmt)
+	rows, err := s.conn.Query(ctx, listCollectionsStmt)
 	if err != nil {
 		log.Errorf("GetCollectionNames %s ", err.Error())
 		return nil, err
@@ -135,7 +135,7 @@ func (s *store) GetCollectionNames(ctx context.Context) ([]string, error) {
 // GetCollection retrieves the collection configuration from the database
 func (s *store) GetCollection(ctx context.Context, name string) (*Collection, error) {
 	collection := &Collection{}
-	collRows, err := s.pool.Query(ctx, getCollectionStmt, name)
+	collRows, err := s.conn.Query(ctx, getCollectionStmt, name)
 	if err != nil {
 		log.Errorf("GetCollection %s ", err.Error())
 		return nil, err
@@ -164,7 +164,7 @@ func (s *store) GetCollection(ctx context.Context, name string) (*Collection, er
 // GetMetrics retrieves the configuration for the metrics associated to this collection.
 func (s *store) GetMetrics(ctx context.Context, name string) ([]Metric, error) {
 	metrics := make([]Metric, 0)
-	rows, err := s.pool.Query(ctx, getMetricsStmt, name)
+	rows, err := s.conn.Query(ctx, getMetricsStmt, name)
 	if err != nil {
 		log.Errorf("GetMetrics %s ", err.Error())
 		return nil, err
@@ -186,7 +186,7 @@ func (s *store) GetMetrics(ctx context.Context, name string) ([]Metric, error) {
 // If a collection with the same name already exists, it is replaced.
 func (s *store) PutCollection(ctx context.Context, collection *Collection) error {
 	log.Debugf("%+v", collection)
-	txn, err := s.pool.Begin(ctx)
+	txn, err := s.conn.Begin(ctx)
 	if err != nil {
 		log.Debugln(err)
 		return err

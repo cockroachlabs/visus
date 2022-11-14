@@ -25,8 +25,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// PgxPool defines the methods to access the database.
-type PgxPool interface {
+// Connection defines the methods to access the database.
+type Connection interface {
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
@@ -38,13 +38,17 @@ type PgxPool interface {
 	BeginTxFunc(ctx context.Context, txOptions pgx.TxOptions, f func(pgx.Tx) error) error
 }
 
-// New creates a new connection pool to the database.
+// New creates a new connection to the database.
 // It waits until a connection can be established, or the the context has been cancelled.
-func New(ctx context.Context, URL string) (PgxPool, error) {
-	var pool *pgxpool.Pool
+func New(ctx context.Context, URL string) (Connection, error) {
+	var conn *pgxpool.Pool
 	sleepTime := int64(5)
+	poolConfig, err := pgxpool.ParseConfig(URL)
+	if err != nil {
+		log.Fatal(err)
+	}
 	for {
-		poolConfig, err := pgxpool.ParseConfig(URL)
+		conn, err = pgxpool.ConnectConfig(ctx, poolConfig)
 		if err != nil {
 			log.Error(err)
 			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
@@ -52,25 +56,14 @@ func New(ctx context.Context, URL string) (PgxPool, error) {
 			if err != nil {
 				return nil, err
 			}
-			//time.Sleep(time.Duration(sleep * int(time.Second)))
 		} else {
-			pool, err = pgxpool.ConnectConfig(ctx, poolConfig)
-			if err != nil {
-				log.Error(err)
-				log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
-				err := sleep(ctx, sleepTime)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				break
-			}
+			break
 		}
 		if sleepTime < int64(60) {
 			sleepTime += int64(5)
 		}
 	}
-	return pool, nil
+	return conn, nil
 }
 
 func sleep(ctx context.Context, seconds int64) error {

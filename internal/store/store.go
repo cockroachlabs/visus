@@ -32,14 +32,12 @@ type Store interface {
 	GetCollection(ctx context.Context, name string) (*Collection, error)
 	// GetCollectionNames returns the collection names present in the store.
 	GetCollectionNames(ctx context.Context) ([]string, error)
-	// GetHistograms returns the histograms from the database.
+	// GetHistogram returns the histogram with the given name.
 	GetHistogram(ctx context.Context, name string) (*Histogram, error)
-	// GetHistograms returns the histograms from the database.
+	// GetHistogramNames returns the histogram names present in the store.
 	GetHistogramNames(ctx context.Context) ([]string, error)
 	// GetMetrics returns the metrics associated to a collection.
 	GetMetrics(ctx context.Context, name string) ([]Metric, error)
-	// GetPool returns the underlying database connection pool
-	GetPool() database.PgxPool
 	// Init initializes the schema in the database
 	Init(ctx context.Context) error
 	// PutCollection adds a collection configuration to the database.
@@ -49,19 +47,14 @@ type Store interface {
 }
 
 type store struct {
-	pool database.PgxPool
+	conn database.Connection
 }
 
 // New create a store
-func New(pool database.PgxPool) Store {
+func New(conn database.Connection) Store {
 	return &store{
-		pool: pool,
+		conn: conn,
 	}
-}
-
-// GetPool returns the underlying database connection pool
-func (s *store) GetPool() database.PgxPool {
-	return s.pool
 }
 
 //go:embed sql/ddl.sql
@@ -69,6 +62,6 @@ var ddl string
 
 // Init initializes the schema in the database
 func (s *store) Init(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, ddl)
+	_, err := s.conn.Exec(ctx, ddl)
 	return err
 }

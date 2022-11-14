@@ -72,14 +72,14 @@ func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, r
 		res.AddRow(row.label, row.gauge, row.counter)
 	}
 	query.WillReturnRows(res)
-	err := collector.Collect(context.Background())
+	err := collector.Collect(context.Background(), mock)
 	require.NoError(t, err)
 }
 func TestCollector_Collect(t *testing.T) {
 	a, r := assertions(t)
 	mock, err := pgxmock.NewConn()
 	r.NoError(err)
-	coll := New("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).
+	coll := New("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1").
 		WithMaxResults(maxResults)
 	err = coll.AddCounter("counter", "counter")
 	r.NoError(err)
@@ -174,16 +174,14 @@ func TestCollector_Collect(t *testing.T) {
 
 func Test_collector_AddCounter(t *testing.T) {
 	a, r := assertions(t)
-	mock, err := pgxmock.NewConn()
-	r.NoError(err)
 	collName := "test"
-	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).(*collector)
+	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
 	name := "counter"
 	help := "help counter"
-	err = coll.AddCounter(name, help)
+	err := coll.AddCounter(name, help)
 	r.NoError(err)
 	metric, ok := coll.metrics[name]
 	a.Equal(true, ok)
@@ -230,16 +228,14 @@ func Test_collector_AddCounter(t *testing.T) {
 
 func Test_collector_AddGauge(t *testing.T) {
 	a, r := assertions(t)
-	mock, err := pgxmock.NewConn()
-	r.NoError(err)
 	collName := "test"
-	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1", mock).(*collector)
+	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
 	name := "gauge"
 	help := "help gauge"
-	err = coll.AddGauge(name, help)
+	err := coll.AddGauge(name, help)
 	r.NoError(err)
 	metric, ok := coll.metrics[name]
 	a.Equal(true, ok)

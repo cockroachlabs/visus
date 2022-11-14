@@ -27,13 +27,14 @@ import (
 func WriteMetrics(
 	ctx context.Context,
 	metricFamilies map[string]*dto.MetricFamily,
+	rewrite bool,
 	translators []translator.Translator,
 	out io.Writer,
 ) error {
 	for _, mf := range metricFamilies {
-		if mf.GetType() == dto.MetricType_HISTOGRAM {
-			for _, histogram := range translators {
-				histogram.Translate(ctx, mf, out)
+		if mf.GetType() == dto.MetricType_HISTOGRAM && rewrite {
+			for _, tr := range translators {
+				tr.Translate(ctx, mf, out)
 			}
 		} else {
 			_, err := expfmt.MetricFamilyToText(out, mf)
