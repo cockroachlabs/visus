@@ -86,11 +86,11 @@ func listCmd() *cobra.Command {
 		Example: `./visus collection list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			collections, err := store.GetCollectionNames(ctx)
 			if err != nil {
 				fmt.Print("Error retrieving collections")
@@ -111,11 +111,11 @@ func initCmd() *cobra.Command {
 		Example: `./visus collection init  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			err = store.Init(ctx)
 			if err != nil {
 				fmt.Printf("Error initializing database at %s.\n", databaseURL)
@@ -136,11 +136,11 @@ func getCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			collection, err := store.GetCollection(ctx, collectionName)
 			if err != nil {
 				fmt.Printf("Error retrieving collection %s.", collectionName)
@@ -171,11 +171,11 @@ func testCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			st := store.New(pool)
+			st := store.New(conn)
 			coll, err := st.GetCollection(ctx, collectionName)
 			if err != nil {
 				fmt.Printf("Error retrieving collection %s.", collectionName)
@@ -184,7 +184,7 @@ func testCmd() *cobra.Command {
 			if coll == nil {
 				fmt.Printf("Collection %s not found\n", collectionName)
 			} else {
-				collector := collector.New(coll.Name, coll.Labels, coll.Query, pool).
+				collector := collector.New(coll.Name, coll.Labels, coll.Query).
 					WithMaxResults(coll.MaxResult)
 				for _, m := range coll.Metrics {
 					switch m.Kind {
@@ -203,7 +203,7 @@ func testCmd() *cobra.Command {
 						}
 					}
 					fmt.Printf("\n---- %s %s -----\n", time.Now().Format("01-02-2006 15:04:05"), coll.Name)
-					collector.Collect(ctx)
+					collector.Collect(ctx, conn)
 					gathering, err := prometheus.DefaultGatherer.Gather()
 					if err != nil {
 						fmt.Printf("Error collecting metrics %s.", err)
@@ -235,11 +235,11 @@ func deleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			err = store.DeleteCollection(ctx, args[0])
 			if err != nil {
 				fmt.Printf("Error deleting collection %s.\n", collectionName)
@@ -263,7 +263,7 @@ func putCmd() *cobra.Command {
 			if file == "" {
 				return errors.New("yaml configuration required")
 			}
-			pool, err := database.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -297,7 +297,7 @@ func putCmd() *cobra.Command {
 				Labels:    config.Labels,
 				Metrics:   metrics,
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			err = store.PutCollection(ctx, collection)
 			if err != nil {
 				fmt.Printf("Error inserting collection %s.", config.Name)

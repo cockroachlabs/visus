@@ -18,7 +18,7 @@ The template of the query is as follows (common table expressions are allowed; a
 
 ```sql
 SELECT 
-   label_1, ... ,label_n, metric_1, ... metric_m  
+   label_1, ... ,label_n, metric_1, ... metric_m
 FROM 
    ... 
 WHERE 
@@ -51,7 +51,7 @@ metrics:
   - name : exec_count
     kind : counter
     help : statement count per application and database.
-query:    
+query:
   SELECT
     application_name as application,
     database_name as database,
@@ -101,7 +101,7 @@ Now, we can create a new collection in the database using the `visus put` comman
 Result:
 
 ```text
-Collection query_count inserted.                            
+Collection query_count inserted.
 ```
 
 List all the collection names in the database:
@@ -208,12 +208,12 @@ Usage:
   visus collection [command]
 
 Available Commands:
-  delete      
-  get         
-  init        
-  list        
-  put         
-  test        
+  delete
+  get
+  init
+  list
+  put
+  test
 
 Flags:
   -h, --help         help for collection
@@ -236,11 +236,11 @@ Usage:
   visus histogram [command]
 
 Available Commands:
-  delete      
-  get         
-  list        
-  put         
-  test        
+  delete
+  get
+  list
+  put
+  test
 
 Flags:
   -h, --help         help for histogram
@@ -256,7 +256,7 @@ Use "visus histogram [command] --help" for more information about a command.
 
 ### Starting a server
 
-To start the server, use the 'visus start' command:
+To start the server, use the `visus start` command:
 
 ```text
 Usage:
@@ -267,16 +267,19 @@ Examples:
 ./visus start --bindAddr "127.0.0.1:15432" 
 
 Flags:
-      --bind-addr string    A network address and port to bind to (default "127.0.0.1:8888")
-      --bind-cert string    Path to the  TLS certificate for the server
-      --bind-key string     Path to the  TLS key for the server
-      --ca-cert string      Path to the  CA certificate
-      --endpoint string     Endpoint for metrics. (default "/_status/vars")
-  -h, --help                help for start
-      --insecure            this flag must be set if no TLS configuration is provided
-      --prometheus string   prometheus endpoint
-      --refresh duration    How ofter to refresh the configuration from the database. (default 5m0s)
-      --url string          Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
+      --bind-addr string     A network address and port to bind to (default "127.0.0.1:8888")
+      --bind-cert string     Path to the  TLS certificate for the server
+      --bind-key string      Path to the  TLS key for the server
+      --ca-cert string       Path to the  CA certificate
+      --endpoint string      Endpoint for metrics. (default "/_status/vars")
+  -h, --help                 help for start
+      --insecure             this flag must be set if no TLS configuration is provided
+      --proc-metrics         enable the collection of process metrics
+      --prometheus string    prometheus endpoint
+      --refresh duration     How ofter to refresh the configuration from the database. (default 5m0s)
+      --rewrite-histograms   enable histogram rewriting
+      --url string           Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
+      --visus-metrics        enable the collection of visus metrics
 
 Global Flags:
       --logDestination string   write logs to a file, instead of stdout

@@ -41,11 +41,11 @@ func Command() *cobra.Command {
 ./visus start --bindAddr "127.0.0.1:15432" `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			pool, err := database.New(ctx, cfg.URL)
+			conn, err := database.New(ctx, cfg.URL)
 			if err != nil {
 				return err
 			}
-			store := store.New(pool)
+			store := store.New(conn)
 			registry := prometheus.NewRegistry()
 			// Run the httpServer in a separate context, so that we can
 			// control the shutdown process.
@@ -59,7 +59,7 @@ func Command() *cobra.Command {
 				return err
 			}
 
-			metricServer := metric.New(ctx, cfg, store, registry)
+			metricServer := metric.New(ctx, cfg, store, conn, registry)
 			err = metricServer.Start(ctx)
 			if err != nil {
 				return err
@@ -104,5 +104,6 @@ func Command() *cobra.Command {
 	f.StringVar(&cfg.URL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	f.StringVar(&cfg.Prometheus, "prometheus", "", "prometheus endpoint")
+	f.BoolVar(&cfg.RewriteHistograms, "rewrite-histograms", false, "enable histogram rewriting")
 	return c
 }

@@ -39,7 +39,7 @@ type Collector interface {
 	// AddGauge adds a gauge to the list of metrics to return.
 	AddGauge(name string, help string) error
 	// Collect retrieves the values for all the metrics defined.
-	Collect(ctx context.Context) error
+	Collect(ctx context.Context, conn database.Connection) error
 	// GetFrequency returns how often the collector is called, in seconds.
 	GetFrequency() int
 	// GetLastModified retrieve the last time the job was modified.
@@ -65,7 +65,6 @@ type collector struct {
 	metrics      map[string]metric
 	query        string
 	first        bool
-	pool         database.PgxPool
 	metricsCache *lru.Cache
 	maxResults   int
 	registerer   prometheus.Registerer
@@ -116,7 +115,7 @@ type cacheValue struct {
 // to specify the limit on the number results to be returned. The columns must contain the labels specified.
 // The format of the query:
 // (SELECT label1,label2, ..., metric1,metric2,... FROM ... WHERE ... LIMIT $1)
-func New(name string, labels []string, query string, pool database.PgxPool) Collector {
+func New(name string, labels []string, query string) Collector {
 	labelMap := make(map[string]int)
 	for i, l := range labels {
 		labelMap[l] = i
@@ -131,14 +130,13 @@ func New(name string, labels []string, query string, pool database.PgxPool) Coll
 		first:      true,
 		frequency:  10,
 		maxResults: 100,
-		pool:       pool,
 		registerer: prometheus.DefaultRegisterer,
 	}
 }
 
 // FromCollection creates a collector from a collection configuration stored in the database.
 func FromCollection(
-	coll *store.Collection, pool database.PgxPool, registerer prometheus.Registerer,
+	coll *store.Collection, conn database.Connection, registerer prometheus.Registerer,
 ) (Collector, error) {
 	labelMap := make(map[string]int)
 	for i, l := range coll.Labels {
@@ -155,7 +153,6 @@ func FromCollection(
 		first:        true,
 		frequency:    int(coll.Frequency.Microseconds / (1000 * 1000)),
 		maxResults:   coll.MaxResult,
-		pool:         pool,
 		registerer:   registerer,
 	}
 	for _, m := range coll.Metrics {
@@ -230,7 +227,7 @@ func (c *collector) AddGauge(name string, help string) error {
 
 // Collect execute the query and updates the Prometheus metrics.
 // (TODO: silvano) handle global collectors (run only on one node)
-func (c *collector) Collect(ctx context.Context) error {
+func (c *collector) Collect(ctx context.Context, conn database.Connection) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.mu.inUse || !c.enabled {
@@ -245,7 +242,7 @@ func (c *collector) Collect(ctx context.Context) error {
 	query := c.query
 	log.Debugf("Collect %s ", c.name)
 	log.Tracef("Collect %s query %s ", c.name, query)
-	rows, err := c.pool.Query(ctx, query, c.maxResults)
+	rows, err := conn.Query(ctx, query, c.maxResults)
 	if err != nil {
 		log.Errorf("Collect %s \n%s", err.Error(), c.query)
 		return err

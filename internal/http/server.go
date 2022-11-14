@@ -31,12 +31,12 @@ import (
 )
 
 type serverImpl struct {
-	config     *server.Config
-	httpServer *http.Server
-	histograms []store.Histogram
-	store      store.Store
-	scheduler  *gocron.Scheduler
-	registry   *prometheus.Registry
+	config      *server.Config
+	httpServer  *http.Server
+	translators []translator.Translator
+	store       store.Store
+	scheduler   *gocron.Scheduler
+	registry    *prometheus.Registry
 }
 
 // New constructs a http server to server the metrics
@@ -47,30 +47,37 @@ func New(
 		Addr: cfg.BindAddr,
 	}
 	server := &serverImpl{
-		config:     cfg,
-		histograms: make([]store.Histogram, 0),
-		httpServer: httpServer,
-		store:      st,
-		scheduler:  gocron.NewScheduler(time.UTC),
-		registry:   registry,
+		config:      cfg,
+		translators: make([]translator.Translator, 0),
+		httpServer:  httpServer,
+		store:       st,
+		scheduler:   gocron.NewScheduler(time.UTC),
+		registry:    registry,
 	}
 	return server, nil
 }
 
 func (s *serverImpl) Refresh(ctx context.Context) error {
+	if !s.config.RewriteHistograms {
+		return nil
+	}
 	names, err := s.store.GetHistogramNames(ctx)
 	if err != nil {
 		return err
 	}
-	s.histograms = nil
+	s.translators = nil
 	for _, name := range names {
 		histogram, err := s.store.GetHistogram(ctx, name)
 		if err != nil {
 			return err
 		}
-		s.histograms = append(s.histograms, *histogram)
+		hnew, err := translator.New(*histogram)
+		if err != nil {
+			log.Errorf("Error translating histograms", err)
+			continue
+		}
+		s.translators = append(s.translators, hnew)
 	}
-
 	return nil
 }
 
@@ -85,16 +92,6 @@ func (s *serverImpl) Start(ctx context.Context) error {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		if s.config.Prometheus != "" {
-			translators := make([]translator.Translator, 0)
-			for _, h := range s.histograms {
-				hnew, err := translator.New(h)
-				if err != nil {
-					s.errorResponse(w, "Error translating histograms", err)
-					return
-				}
-				translators = append(translators, hnew)
-			}
-
 			tlsConfig, err := s.config.GetTLSClientConfig()
 			if err != nil {
 				s.errorResponse(w, "Error setting up secure connection", err)
@@ -104,7 +101,7 @@ func (s *serverImpl) Start(ctx context.Context) error {
 			if err != nil {
 				log.Error(err)
 			}
-			WriteMetrics(ctx, metricsIn, translators, w)
+			WriteMetrics(ctx, metricsIn, s.config.RewriteHistograms, s.translators, w)
 		}
 		metrics, err := s.registry.Gather()
 		if err != nil {

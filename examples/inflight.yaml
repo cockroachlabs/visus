@@ -1,0 +1,22 @@
+name: inflight
+enabled: true
+frequency: 10
+maxresults: 10
+labels: [user_name,application_name]
+metrics:
+  - name : duration
+    kind : gauge
+    help : inflight queries with the highest latency
+query:  
+  SELECT
+      user_name,
+      application_name,
+      max((now() - start)::DECIMAL * 1000) AS duration
+  FROM
+      crdb_internal.node_queries
+  GROUP BY
+      1, 2
+  ORDER BY
+      3 DESC
+  LIMIT
+      $1;

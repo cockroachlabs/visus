@@ -49,7 +49,7 @@ var deleteHistogramStmt string
 
 // DeleteHistogram removes a histogram configuration from the database.
 func (s *store) DeleteHistogram(ctx context.Context, regex string) error {
-	txn, err := s.pool.Begin(ctx)
+	txn, err := s.conn.Begin(ctx)
 	if err != nil {
 		log.Debugln(err)
 		return err
@@ -66,7 +66,7 @@ func (s *store) DeleteHistogram(ctx context.Context, regex string) error {
 
 // GetHistograms retrieves all the histograms stored in the database.
 func (s *store) GetHistogram(ctx context.Context, name string) (*Histogram, error) {
-	rows, err := s.pool.Query(ctx, getHistogramStmt, name)
+	rows, err := s.conn.Query(ctx, getHistogramStmt, name)
 	if err != nil {
 		log.Errorf("GetHistogram %s ", err.Error())
 		return nil, err
@@ -89,7 +89,7 @@ func (s *store) GetHistogram(ctx context.Context, name string) (*Histogram, erro
 
 // GetHistograms retrieves all the histograms stored in the database.
 func (s *store) GetHistogramNames(ctx context.Context) ([]string, error) {
-	rows, err := s.pool.Query(ctx, listHistogramsStmt)
+	rows, err := s.conn.Query(ctx, listHistogramsStmt)
 	if err != nil {
 		log.Errorf("GetHistogramNames %s ", err.Error())
 		return nil, err
@@ -113,7 +113,7 @@ func (s *store) GetHistogramNames(ctx context.Context) ([]string, error) {
 // If a histogram with the same regex already exists, it is replaced.
 func (s *store) PutHistogram(ctx context.Context, histogram *Histogram) error {
 	log.Debugf("%+v", histogram)
-	txn, err := s.pool.Begin(ctx)
+	txn, err := s.conn.Begin(ctx)
 	if err != nil {
 		log.Debugln(err)
 		return err
