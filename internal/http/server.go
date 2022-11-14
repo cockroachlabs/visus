@@ -73,7 +73,7 @@ func (s *serverImpl) Refresh(ctx context.Context) error {
 		}
 		hnew, err := translator.New(*histogram)
 		if err != nil {
-			log.Errorf("Error translating histograms", err)
+			log.Errorf("Error translating histograms %s", err)
 			continue
 		}
 		s.translators = append(s.translators, hnew)
