@@ -13,7 +13,7 @@ CREATE TYPE IF NOT EXISTS _visus.scope AS ENUM ('local', 'global');
 CREATE TABLE IF NOT EXISTS _visus.collection (
     namespace     STRING DEFAULT '',
     name       STRING NOT NULL,
-    updated    timestamptz DEFAULT current_timestamp (), 
+    updated    timestamptz DEFAULT current_timestamp (),
     enabled    BOOL DEFAULT true,
     scope      _visus.scope NOT NULL,
     maxResults INT NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS _visus.metric (
 CREATE TABLE IF NOT EXISTS _visus.histogram (
     name         STRING NOT NULL,
     regex        STRING NOT NULL,
-    updated    timestamptz DEFAULT current_timestamp (), 
+    updated    timestamptz DEFAULT current_timestamp (),
     bins         INT NOT NULL,
     "start"      INT NOT NULL,
     "end"        INT NOT NULL,
