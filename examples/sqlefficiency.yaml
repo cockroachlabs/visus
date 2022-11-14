@@ -2,23 +2,11 @@
 name: sqlefficiency
 frequency: 10
 maxresults: 10
-labels: []
+labels: [type]
 metrics:
-  - name : liototal
+  - name : rows
     kind : counter
-    help : total number of rows.
-  - name : fulllio
-    kind : counter
-    help : number of rows from full scan.
-  - name : ijoinlio
-    kind : counter
-    help : number of rows from full index joins.
-  - name : explicitlio
-    kind : counter
-    help : number of rows from explicit statements.
-  - name : healtylio
-    kind : counter
-    help : number of rows from healty logical IO.   
+    help : number of rows.
 query: 
   WITH
     stmt_hr_calc
@@ -66,14 +54,13 @@ query:
         ORDER BY
           lioperstmt
       )
-  SELECT
-    sum(lioperstmt) AS liototal,
-    sum(lioperstmt * (IF(fullcnt > 0, 1, 0))) AS fulllio,
-    sum(lioperstmt * (IF(ijoincnt > 0, 1, 0))) AS ijoinlio,
-    sum(lioperstmt * (IF(explicitcnt > 0, 1, 0))) AS explicitlio,
-    sum(lioperstmt * (IF(healthycnt > 0, 1, 0))) AS healtylio
-  FROM
-    sql_distinct_cnt
+  SELECT 'fulllio' as type,sum(lioperstmt * (IF(fullcnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
+  UNION
+  SELECT 'ijoinlio' as type,sum(lioperstmt * (IF(ijoincnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
+  UNION
+  SELECT 'explicitlio' as type,sum(lioperstmt * (IF(explicitcnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
+  UNION
+  SELECT 'healtylio' as type,sum(lioperstmt * (IF(healthycnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
   LIMIT 
     $1  
   ;
