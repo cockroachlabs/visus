@@ -16,6 +16,8 @@
 package collection
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"math"
@@ -30,6 +32,7 @@ import (
 	"github.com/jackc/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
+	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 )
@@ -51,10 +54,11 @@ type config struct {
 	Name       string
 	Frequency  int
 	MaxResults int
-	Enabled    bool `default:"true"`
+	Enabled    bool
 	Query      string
 	Labels     []string
 	Metrics    []metricDef
+	Scope      string `default:"node"`
 }
 
 func marshal(collection *store.Collection) ([]byte, error) {
@@ -75,18 +79,19 @@ func marshal(collection *store.Collection) ([]byte, error) {
 		Query:      collection.Query,
 		Labels:     collection.Labels,
 		Metrics:    metrics,
+		Scope:      string(collection.Scope),
 	}
 	return yaml.Marshal(config)
 }
 
 // listCmd list all the collections in the datababse
-func listCmd() *cobra.Command {
+func listCmd(factory database.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "list",
 		Example: `./visus collection list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -105,30 +110,7 @@ func listCmd() *cobra.Command {
 	return c
 }
 
-func initCmd() *cobra.Command {
-	c := &cobra.Command{
-		Use:     "init",
-		Example: `./visus collection init  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
-			if err != nil {
-				return err
-			}
-			store := store.New(conn)
-			err = store.Init(ctx)
-			if err != nil {
-				fmt.Printf("Error initializing database at %s.\n", databaseURL)
-				return err
-			}
-			fmt.Printf("Database initialized at %s\n", databaseURL)
-			return nil
-		},
-	}
-	return c
-}
-
-func getCmd() *cobra.Command {
+func getCmd(factory database.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "get",
 		Args:    cobra.ExactArgs(1),
@@ -136,7 +118,7 @@ func getCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -161,7 +143,7 @@ func getCmd() *cobra.Command {
 	return c
 }
 
-func testCmd() *cobra.Command {
+func testCmd(factory database.Factory) *cobra.Command {
 	var interval time.Duration
 	var count int
 	c := &cobra.Command{
@@ -171,7 +153,7 @@ func testCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -227,7 +209,7 @@ func testCmd() *cobra.Command {
 	return c
 }
 
-func deleteCmd() *cobra.Command {
+func deleteCmd(factory database.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "delete",
 		Args:    cobra.ExactArgs(1),
@@ -235,7 +217,7 @@ func deleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -252,7 +234,7 @@ func deleteCmd() *cobra.Command {
 	return c
 }
 
-func putCmd() *cobra.Command {
+func putCmd(factory database.Factory) *cobra.Command {
 	var file string
 	c := &cobra.Command{
 		Use:     "put",
@@ -263,13 +245,27 @@ func putCmd() *cobra.Command {
 			if file == "" {
 				return errors.New("yaml configuration required")
 			}
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			data, err := os.ReadFile(file)
-			if err != nil {
-				return err
+			var data []byte
+			if file == "-" {
+				var buffer bytes.Buffer
+				scanner := bufio.NewScanner(os.Stdin)
+				for scanner.Scan() {
+					buffer.Write(scanner.Bytes())
+					buffer.WriteString("\n")
+				}
+				if err := scanner.Err(); err != nil {
+					log.Errorf("reading standard input: %s", err.Error())
+				}
+				data = buffer.Bytes()
+			} else {
+				data, err = os.ReadFile(file)
+				if err != nil {
+					return err
+				}
 			}
 			config := &config{}
 			err = yaml.Unmarshal(data, &config)
@@ -287,15 +283,33 @@ func putCmd() *cobra.Command {
 					Help: m.Help,
 				})
 			}
+			var scope store.Scope
+			switch strings.ToLower(config.Scope) {
+			case "node":
+				scope = store.Node
+			case "cluster":
+				scope = store.Cluster
+			default:
+				return errors.New("invalid scope")
+			}
+			if config.Query == "" {
+				return errors.New("query must be specified")
+			}
+			if config.Name == "" {
+				return errors.New("name must be specified")
+			}
 			collection := &store.Collection{
 				Name:      config.Name,
 				Enabled:   config.Enabled,
-				Scope:     store.Local,
+				Scope:     scope,
 				MaxResult: config.MaxResults,
-				Frequency: pgtype.Interval{Status: pgtype.Present, Microseconds: int64(config.Frequency) * microsecondsPerSecond},
-				Query:     config.Query,
-				Labels:    config.Labels,
-				Metrics:   metrics,
+				Frequency: pgtype.Interval{
+					Status:       pgtype.Present,
+					Microseconds: int64(config.Frequency) * microsecondsPerSecond,
+				},
+				Query:   config.Query,
+				Labels:  config.Labels,
+				Metrics: metrics,
 			}
 			store := store.New(conn)
 			err = store.PutCollection(ctx, collection)
@@ -318,7 +332,12 @@ func Command() *cobra.Command {
 		Use: "collection",
 	}
 	f := c.PersistentFlags()
-	c.AddCommand(initCmd(), listCmd(), getCmd(), deleteCmd(), putCmd(), testCmd())
+	c.AddCommand(
+		getCmd(database.DefaultFactory),
+		listCmd(database.DefaultFactory),
+		deleteCmd(database.DefaultFactory),
+		putCmd(database.DefaultFactory),
+		testCmd(database.DefaultFactory))
 	f.StringVar(&databaseURL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	return c

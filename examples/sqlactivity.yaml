@@ -1,4 +1,6 @@
 name: sqlactivity
+enabled: true
+scope: node
 frequency: 10
 maxresults: 10
 labels: [statement,application,database]

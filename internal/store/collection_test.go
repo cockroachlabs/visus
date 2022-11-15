@@ -85,7 +85,7 @@ func TestGetCollection(t *testing.T) {
 			Metrics:      []Metric{},
 			Name:         "no_metrics",
 			Query:        "SELECT * FROM test limit %1",
-			Scope:        Local,
+			Scope:        Node,
 		}, false},
 		{"with_metrics", &Collection{
 			Enabled:      true,
@@ -99,7 +99,7 @@ func TestGetCollection(t *testing.T) {
 			},
 			Name:  "with_metrics",
 			Query: "SELECT * FROM test limit %1",
-			Scope: Local,
+			Scope: Node,
 		}, false},
 	}
 	for _, tt := range tests {
@@ -152,7 +152,7 @@ func TestPutCollection(t *testing.T) {
 			Metrics:      []Metric{},
 			Name:         "no_metrics",
 			Query:        "SELECT * FROM test limit %1",
-			Scope:        Local,
+			Scope:        Node,
 		}, false},
 		{"with_metrics", &Collection{
 			Enabled:      true,
@@ -166,7 +166,7 @@ func TestPutCollection(t *testing.T) {
 			},
 			Name:  "with_metrics",
 			Query: "SELECT * FROM test limit %1",
-			Scope: Local,
+			Scope: Node,
 		}, false},
 	}
 	for _, tt := range tests {

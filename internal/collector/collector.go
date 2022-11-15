@@ -256,7 +256,7 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
-			log.Warnf("Collect %s", err.Error())
+			log.Warnf("%s collect %s", c.name, err.Error())
 			continue
 		}
 		labels := make([]string, len(c.labels))
@@ -266,7 +266,7 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 				if value, ok := v.(string); ok {
 					labels[pos] = value
 				} else {
-					log.Errorf("Unknown type %T for label %s", v, colName)
+					log.Errorf("%s: unknown type %T for label %s", c.name, v, colName)
 				}
 			} else if _, ok := c.metrics[colName]; ok {
 				metric := c.metrics[colName]
@@ -283,7 +283,7 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 						c.counterAdd(vec, metric.name, labels, floatValue)
 					case nil:
 					default:
-						log.Errorf("Unknown type %T for %s", v, metric.name)
+						log.Errorf("%s unknown type %T for %s", c.name, v, metric.name)
 					}
 				case *prometheus.GaugeVec:
 					switch value := v.(type) {
@@ -297,11 +297,11 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 						c.gaugeSet(vec, metric.name, labels, floatValue)
 					case nil:
 					default:
-						log.Errorf("Unknown type %T for %s", v, metric.name)
+						log.Errorf("%s unknown type %T for %s", c.name, v, metric.name)
 					}
 				}
 			} else {
-				log.Errorf("Unknown column %s", colName)
+				log.Errorf("%s unknown column %s", c.name, colName)
 			}
 		}
 	}

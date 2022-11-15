@@ -25,6 +25,18 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// Factory creates database connections
+type Factory interface {
+	//New creates a new connection to the database.
+	New(ctx context.Context, URL string) (Connection, error)
+}
+
+type factory struct {
+}
+
+// DefaultFactory creates a pool of PGX connections.
+var DefaultFactory = &factory{}
+
 // Connection defines the methods to access the database.
 type Connection interface {
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
@@ -40,7 +52,7 @@ type Connection interface {
 
 // New creates a new connection to the database.
 // It waits until a connection can be established, or the the context has been cancelled.
-func New(ctx context.Context, URL string) (Connection, error) {
+func (f factory) New(ctx context.Context, URL string) (Connection, error) {
 	var conn *pgxpool.Pool
 	sleepTime := int64(5)
 	poolConfig, err := pgxpool.ParseConfig(URL)

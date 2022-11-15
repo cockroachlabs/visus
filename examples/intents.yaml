@@ -1,4 +1,6 @@
 name: intent
+enabled: true
+scope: cluster
 frequency: 10
 maxresults: 100
 labels: [table_name]

@@ -1,5 +1,6 @@
 name: inflight
 enabled: true
+scope: node
 frequency: 10
 maxresults: 10
 labels: [user_name,application_name]

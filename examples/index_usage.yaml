@@ -1,5 +1,7 @@
 
 name: index
+enabled: true
+scope: cluster
 frequency: 60
 maxresults: 100
 labels: [table_name, index_name]

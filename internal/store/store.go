@@ -18,6 +18,7 @@ package store
 import (
 	"context"
 	_ "embed" // embedding sql statements
+	"time"
 
 	"github.com/cockroachlabs/visus/internal/database"
 )
@@ -40,6 +41,9 @@ type Store interface {
 	GetMetrics(ctx context.Context, name string) ([]Metric, error)
 	// Init initializes the schema in the database
 	Init(ctx context.Context) error
+	// IsMainNode returns true if the current node is the main node.
+	// A main node is a node with max(id) in the cluster.
+	IsMainNode(ctx context.Context, lastUpdated time.Time) (bool, error)
 	// PutCollection adds a collection configuration to the database.
 	PutCollection(ctx context.Context, collection *Collection) error
 	// PutHistogram adds a histogram configuration to the database.
@@ -58,10 +62,24 @@ func New(conn database.Connection) Store {
 }
 
 //go:embed sql/ddl.sql
-var ddl string
+var ddlStm string
+
+//go:embed sql/mainNode.sql
+var mainNodeStm string
 
 // Init initializes the schema in the database
 func (s *store) Init(ctx context.Context) error {
-	_, err := s.conn.Exec(ctx, ddl)
+	_, err := s.conn.Exec(ctx, ddlStm)
 	return err
+}
+
+// isMainNode returns true if the node id of the node is the max(id) in the cluster.
+func (s *store) IsMainNode(ctx context.Context, lastUpdated time.Time) (bool, error) {
+	var res *bool
+	row := s.conn.QueryRow(ctx, mainNodeStm, lastUpdated)
+	err := row.Scan(&res)
+	if err != nil || res == nil {
+		return false, err
+	}
+	return *res, nil
 }

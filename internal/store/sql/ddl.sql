@@ -1,14 +1,14 @@
 CREATE DATABASE IF NOT EXISTS _visus;
 
-CREATE ROLE IF NOT EXISTS visus_role;
-ALTER ROLE visus_role WITH VIEWACTIVITY;
-GRANT CONNECT ON DATABASE _visus to visus_role;
+CREATE USER IF NOT EXISTS visus;
+ALTER ROLE visus WITH VIEWACTIVITY;
+GRANT CONNECT ON DATABASE _visus to visus;
 
 USE _visus;
 
 ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO visus_monitor;
 
-CREATE TYPE IF NOT EXISTS _visus.scope AS ENUM ('local', 'global');
+CREATE TYPE IF NOT EXISTS _visus.scope AS ENUM ('node', 'cluster');
 
 CREATE TABLE IF NOT EXISTS _visus.collection (
     namespace     STRING DEFAULT '',
@@ -37,10 +37,20 @@ CREATE TABLE IF NOT EXISTS _visus.metric (
 CREATE TABLE IF NOT EXISTS _visus.histogram (
     name         STRING NOT NULL,
     regex        STRING NOT NULL,
-    updated    timestamptz DEFAULT current_timestamp (),
+    updated      timestamptz DEFAULT current_timestamp (),
     bins         INT NOT NULL,
     "start"      INT NOT NULL,
     "end"        INT NOT NULL,
     enabled      BOOL DEFAULT true,
     PRIMARY KEY (name)
 );
+
+CREATE TABLE IF NOT EXISTS _visus.node (
+    id           INT PRIMARY KEY,
+    updated      timestamptz DEFAULT current_timestamp ()
+);
+
+GRANT SELECT,INSERT,UPDATE ON TABLE _visus.node TO visus;
+GRANT SELECT ON TABLE _visus.collection TO visus;
+GRANT SELECT ON TABLE _visus.metric TO visus;
+GRANT SELECT ON TABLE _visus.histogram TO visus;

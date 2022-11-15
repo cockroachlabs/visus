@@ -127,13 +127,20 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	last := time.Now().UTC().Add(-m.config.Refresh)
+	isMainNode, err := m.store.IsMainNode(ctx, last)
+	if err != nil {
+
+		return err
+	}
 	for _, name := range names {
 		coll, err := m.store.GetCollection(ctx, name)
 		if err != nil {
 			log.Errorf("Unable to find %s: %s", name, err.Error())
 			continue
 		}
-		if !coll.Enabled {
+		if !coll.Enabled || (coll.Scope == store.Cluster && !isMainNode) {
+			log.Infof("Skipping %s; enabled: %t; scope: %s; main node: %t", name, coll.Enabled, coll.Scope, isMainNode)
 			continue
 		}
 		newCollectors[name] = true
@@ -171,7 +178,8 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 				}
 			}, collctr)
 		if err != nil {
-			return err
+			log.Errorf("error scheduling collector %s: %s", coll.Name, err.Error())
+			continue
 		}
 		m.addJob(coll.Name, collctr, job)
 	}
@@ -191,7 +199,10 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 func (m *metricsServer) Start(ctx context.Context) error {
 	m.scheduler.Every(m.config.Refresh).
 		Do(func() {
-			m.Refresh(ctx)
+			err := m.Refresh(ctx)
+			if err != nil {
+				log.Errorf("Error in refresh %s", err.Error())
+			}
 		})
 	m.scheduler.StartAsync()
 	return nil

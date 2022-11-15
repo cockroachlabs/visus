@@ -1,5 +1,6 @@
 
 name: protected_ts
+enabled: false
 frequency: 10
 maxresults: 1
 labels: []

@@ -81,7 +81,7 @@ VISUS_CRDB_URL="postgresql://visus@localhost:26257/defaultdb?sslmode=disable"
 Initialize the database that contains the configuration for the collections:
 
 ```bash
-./visus collection init --url "$ADMIN_CRDB_URL" 
+./visus init --url "$ADMIN_CRDB_URL" 
 ```
 
 For this example, we use the `visus` user, with the following privileges:
@@ -189,9 +189,7 @@ Result:
 histogram latency inserted.
 ```
 
-To enable filter in the server,
-
-Start the server to enable collection of metrics from Prometheus, specify the collection endpoint with the `--promethues` flag.
+To enable filter in the server, start the server to enable collection of metrics from Prometheus, specify the collection endpoint with the `--promethues` flag.
 
 ```bash
 ./visus start --insecure --endpoint "/_status/custom"  --url "$VISUS_CRDB_URL" --prometheus "http://localhost:8080/_status/vars"
@@ -201,6 +199,25 @@ Start the server to enable collection of metrics from Prometheus, specify the co
 
 ### Collection management commands
 
+Use the `visus init` command to initialize database.
+
+```text
+Usage:
+  visus init [flags]
+
+Examples:
+./visus init  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" 
+
+Flags:
+  -h, --help         help for init
+      --url string   Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
+
+Global Flags:
+      --logDestination string   write logs to a file, instead of stdout
+      --logFormat string        choose log output format [ fluent, text ] (default "text")
+  -v, --verbose count           increase logging verbosity to debug; repeat for trace
+```
+
 Use the `visus collection` command to manage the collections in the database.
 
 ```text
@@ -208,12 +225,11 @@ Usage:
   visus collection [command]
 
 Available Commands:
-  delete
-  get
-  init
-  list
-  put
-  test
+  delete      
+  get         
+  list        
+  put         
+  test        
 
 Flags:
   -h, --help         help for collection
@@ -225,7 +241,7 @@ Global Flags:
   -v, --verbose count           increase logging verbosity to debug; repeat for trace
 
 Use "visus collection [command] --help" for more information about a command.
-  ```
+```
 
 ### Histogram filter management commands
 
