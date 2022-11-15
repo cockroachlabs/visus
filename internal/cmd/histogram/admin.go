@@ -16,6 +16,8 @@
 package histogram
 
 import (
+	"bufio"
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -33,7 +35,7 @@ import (
 var databaseURL = ""
 
 type config struct {
-	Enabled bool `default:"true"`
+	Enabled bool
 	Name    string
 	Bins    int `default:"10"`
 	Start   int `default:"1000000"`
@@ -41,7 +43,7 @@ type config struct {
 	Regex   string
 }
 
-func getCmd() *cobra.Command {
+func getCmd(factory database.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "get",
 		Args:    cobra.ExactArgs(1),
@@ -49,7 +51,7 @@ func getCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			name := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -82,13 +84,13 @@ func getCmd() *cobra.Command {
 	return c
 }
 
-func listCmd() *cobra.Command {
+func listCmd(factory database.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "list",
 		Example: `./visus histogram list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -107,7 +109,7 @@ func listCmd() *cobra.Command {
 	return c
 }
 
-func deleteCmd() *cobra.Command {
+func deleteCmd(factory database.Factory) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "delete",
 		Args:    cobra.ExactArgs(1),
@@ -115,7 +117,7 @@ func deleteCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			regex := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -132,14 +134,14 @@ func deleteCmd() *cobra.Command {
 	return c
 }
 
-func testCmd() *cobra.Command {
+func testCmd(factory database.Factory) *cobra.Command {
 	var prometheus string
 	c := &cobra.Command{
 		Use:     "test",
 		Example: `./visus histogram test --prometheus http://localhost:8080/_status/vars  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -174,7 +176,7 @@ func testCmd() *cobra.Command {
 	return c
 }
 
-func putCmd() *cobra.Command {
+func putCmd(factory database.Factory) *cobra.Command {
 	var file string
 	c := &cobra.Command{
 		Use:     "put",
@@ -185,13 +187,27 @@ func putCmd() *cobra.Command {
 			if file == "" {
 				return errors.New("yaml configuration required")
 			}
-			conn, err := database.New(ctx, databaseURL)
+			conn, err := factory.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			data, err := os.ReadFile(file)
-			if err != nil {
-				return err
+			var data []byte
+			if file == "-" {
+				var buffer bytes.Buffer
+				scanner := bufio.NewScanner(os.Stdin)
+				for scanner.Scan() {
+					buffer.Write(scanner.Bytes())
+					buffer.WriteString("\n")
+				}
+				if err := scanner.Err(); err != nil {
+					log.Errorf("reading standard input: %s", err.Error())
+				}
+				data = buffer.Bytes()
+			} else {
+				data, err = os.ReadFile(file)
+				if err != nil {
+					return err
+				}
 			}
 			config := &config{}
 			err = yaml.Unmarshal(data, &config)
@@ -200,6 +216,12 @@ func putCmd() *cobra.Command {
 			}
 			if err := defaults.Set(config); err != nil {
 				return err
+			}
+			if config.Regex == "" {
+				return errors.New("regex must be specified")
+			}
+			if config.Name == "" {
+				return errors.New("name must be specified")
 			}
 			st := store.New(conn)
 			err = st.PutHistogram(ctx, &store.Histogram{
@@ -228,8 +250,14 @@ func Command() *cobra.Command {
 	c := &cobra.Command{
 		Use: "histogram",
 	}
+
 	f := c.PersistentFlags()
-	c.AddCommand(getCmd(), listCmd(), deleteCmd(), putCmd(), testCmd())
+	c.AddCommand(
+		getCmd(database.DefaultFactory),
+		listCmd(database.DefaultFactory),
+		deleteCmd(database.DefaultFactory),
+		putCmd(database.DefaultFactory),
+		testCmd(database.DefaultFactory))
 	f.StringVar(&databaseURL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	return c

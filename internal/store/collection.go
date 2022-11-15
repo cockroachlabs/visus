@@ -29,10 +29,10 @@ import (
 type Scope string
 
 const (
-	// Global collectors should only run on one node of the cluster.
-	Global = Scope("global")
-	// Local collectors run on all the nodes in the cluster.
-	Local = Scope("local")
+	// Cluster scope collectors should only run on one node of the cluster.
+	Cluster = Scope("cluster")
+	// Node scope collectors run on all the nodes in the cluster.
+	Node = Scope("node")
 )
 
 // Kind is the type of the metric.

@@ -1,4 +1,6 @@
 name: contended_tables
+enabled: true
+scope: cluster
 frequency: 10
 maxresults: 100
 labels: [database_name,schema_name,table_name]
@@ -11,4 +13,6 @@ query:
       database_name, schema_name, table_name, num_contention_events as num_events
     FROM 
       crdb_internal.cluster_contended_tables
+    WHERE
+      database_name IS NOT NULL  
     LIMIT $1;

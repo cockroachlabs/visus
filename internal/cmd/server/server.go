@@ -41,7 +41,7 @@ func Command() *cobra.Command {
 ./visus start --bindAddr "127.0.0.1:15432" `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			conn, err := database.New(ctx, cfg.URL)
+			conn, err := database.DefaultFactory.New(ctx, cfg.URL)
 			if err != nil {
 				return err
 			}

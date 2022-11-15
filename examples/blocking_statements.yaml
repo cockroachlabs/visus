@@ -1,4 +1,6 @@
 name: blocking_statements
+enabled: true
+scope: cluster
 frequency: 10
 maxresults: 100
 labels: [statement]

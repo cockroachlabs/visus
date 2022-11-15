@@ -1,0 +1,25 @@
+name: tables
+enabled: true
+scope: cluster
+frequency: 60
+maxresults: 100
+labels: [database_name, state]
+metrics:
+  - name : num
+    kind : gauge
+    help : number of tables per database
+query:  
+  SELECT
+      database_name::string,
+      state,
+      count(*)::float as num
+  FROM
+      crdb_internal.tables
+  WHERE
+      database_name IS NOT NULL    
+  GROUP BY
+      1, 2
+  ORDER BY
+      3 DESC
+  LIMIT
+      $1;
