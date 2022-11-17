@@ -44,6 +44,7 @@ We would like to have at most 50 results and fetch the metrics every 10 seconds.
 
 ```yaml
 name: query_count
+enable: true
 frequency: 10
 maxresults: 50
 labels: [application,database]
