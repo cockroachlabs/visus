@@ -31,9 +31,11 @@ The Prometheus collectors will add additional labels to track the cluster name a
 
 ## Database Security 
 It is recommended to use separate users for managing the configuration and to run the sidecar.
-The sidecar needs `SELECT ON TABLES` privilege on the `_visus` database to read the configuration. To run many of the sample collections available in the examples directory, 
+The sidecar needs `SELECT ON TABLES` privileges on the `_visus` database to read the configuration. It also needs the `SELECT,INSERT,UPDATE` privileges on the `_visus.node` table, used to determine which node should collect cluster wide metrics.  
+
+To run many of the sample collections available in the examples directory, 
 the 'VIEWACTIVITY' option should be granted to the user.
-The `./visus collection init` command will provision a `visus` user with the minimal privileges to run the sidecar. Defining new collection may require additional privileges, depending on what data the SQL query associated to the collection has to access.
+The `./visus init` command will provision a `visus` user with the minimal privileges to run the sidecar. Defining new collection may require additional privileges, depending on what data the SQL query associated to the collection has to access.
 
 ## Example
 
@@ -44,7 +46,7 @@ We would like to have at most 50 results and fetch the metrics every 10 seconds.
 
 ```yaml
 name: query_count
-enable: true
+enabled: true
 frequency: 10
 maxresults: 50
 labels: [application,database]
@@ -69,34 +71,34 @@ query:
         $1;
 ```
 
-Assuming we have:
-
- * `$ADMIN_CRDB_URL`: variable that defines the URL to connect to the database, for managing the rules.
- * `$VISUS_CRDB_URL`: variable that defines the URL to connect to the database, for running the sidecar.
+We define the following environment variables to run the visus executable.
 
 ```bash
-ADMIN_CRDB_URL="postgresql://root@localhost:26257/defaultdb?sslmode=disable"
-VISUS_CRDB_URL="postgresql://visus@localhost:26257/defaultdb?sslmode=disable"
+VISUS_PROM="http://localhost:8080/_status/vars"
+VISUS_ADMIN="./visus --url postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+VISUS_USER="./visus --url postgresql://visus@localhost:26257/defaultdb?sslmode=disable"
+```
+
+Alternatively, to use the docker image, define:
+
+```bash
+VISUS_PROM="http://host.docker.internal:8080/_status/vars"
+VISUS_ADMIN="docker run --rm -i cockroachdb/visus --url postgresql://root@host.docker.internal:26257/defaultdb?sslmode=disable"
+VISUS_USER="docker run  -p 8888:8888 --rm -i cockroachdb/visus --url postgresql://visus@host.docker.internal:26257/defaultdb?sslmode=disable"
 ```
 
 Initialize the database that contains the configuration for the collections:
 
 ```bash
-./visus init --url "$ADMIN_CRDB_URL" 
+$VISUS_ADMIN init
 ```
 
-For this example, we use the `visus` user, with the following privileges:
+The init will create the tables and a `visus` user.
 
-```sql
-CREATE USER IF NOT EXISTS visus;
-ALTER ROLE visus WITH VIEWACTIVITY;
-GRANT CONNECT ON DATABASE _visus to visus;
-```
-
-Now, we can create a new collection in the database using the `visus put` command. 
+Now, we can create a new collection in the database using the `visus collection put` command.
 
 ```bash
-./visus collection put --url "$ADMIN_CRDB_URL" --yaml query_count.yaml 
+$VISUS_ADMIN collection put --yaml - < query_count.yaml
 ```
 
 Result:
@@ -108,7 +110,7 @@ Collection query_count inserted.
 List all the collection names in the database:
 
 ```bash
-./visus collection list --url "$ADMIN_CRDB_URL"
+$VISUS_USER collection list 
 ```
 
 Result:
@@ -120,7 +122,7 @@ query_count
 View the query_count collection definition:
 
 ```bash
-./visus collection get query_count --url "$ADMIN_CRDB_URL"
+$VISUS_USER collection get query_count 
 ```
 
 Result:
@@ -143,7 +145,7 @@ metrics:
 Test the collection, and fetch the metrics twice, with default interval (10 seconds):
 
 ```bash
-./visus collection test query_count --url "$VISUS_CRDB_URL" --count 2
+$VISUS_USER collection test query_count --count 2
 ```
 
 Sample results:
@@ -165,7 +167,7 @@ query_count_exec_count{application="",database="defaultdb"} 17
 Start the server to enable collection of metrics from Prometheus.
 
 ```bash
-./visus start --insecure --endpoint "/_status/custom"  --url "$VISUS_CRDB_URL" 
+$VISUS_USER start --bind-addr :8888 --insecure --endpoint "/_status/custom" 
 ```
 
 ## Histogram rewriting
@@ -181,7 +183,7 @@ end: 20000000000
 ```
 
 ```bash
-./visus histogram put --yaml latency.yaml  --url "$ADMIN_CRDB_URL" 
+$VISUS_ADMIN  histogram put --yaml - < latency.yaml
 ```
 
 Result:
@@ -193,12 +195,12 @@ histogram latency inserted.
 To enable filter in the server, start the server to enable collection of metrics from Prometheus, specify the collection endpoint with the `--promethues` flag.
 
 ```bash
-./visus start --insecure --endpoint "/_status/custom"  --url "$VISUS_CRDB_URL" --prometheus "http://localhost:8080/_status/vars"
+$VISUS_USER start --bind-addr :8888 --rewrite-histograms --insecure --endpoint "/_status/custom" --prometheus $VISUS_PROM
 ```
 
 ## Commands
 
-### Collection management commands
+### Database management commands
 
 Use the `visus init` command to initialize database.
 
@@ -218,6 +220,8 @@ Global Flags:
       --logFormat string        choose log output format [ fluent, text ] (default "text")
   -v, --verbose count           increase logging verbosity to debug; repeat for trace
 ```
+
+### Collection management commands
 
 Use the `visus collection` command to manage the collections in the database.
 
