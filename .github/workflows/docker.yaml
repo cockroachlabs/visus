@@ -7,7 +7,7 @@
 # Caching from
 # https://github.com/docker/build-push-action/blob/primary/docs/advanced/cache.md'
 
-name: Releases
+name: Docker
 permissions:
   contents: read
 on:
