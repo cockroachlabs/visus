@@ -1,0 +1,86 @@
+name: Release
+permissions:
+  contents: read
+  packages: read
+on:
+  push:
+    tags: [ 'v*.*.*' ]
+    paths:
+      - 'go.mod'
+      - 'go.sum'
+      - '**/*.go'
+  workflow_dispatch:
+    inputs:
+      build_binaries:
+        description: 'Build distributable binaries'
+        type: boolean
+        required: false
+
+jobs:
+  # Binaries will build visus for a variety of common platforms. This
+  # job only runs on pushes to a target branch or tag or in response to
+  # a manual run that requests binaries.
+  binaries:
+    name: Binaries
+    if: ${{ github.event_name == 'push' || inputs.build_binaries }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: windows
+            arch: amd64
+            ext: .exe
+          - os: windows
+            arch: arm64
+            ext: .exe
+    env:
+      BUILDNAME: visus-${{ matrix.os }}-${{ matrix.arch }}
+      OUTPUT: visus-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
+    steps:
+      - uses: actions/checkout@v3
+
+      # Use separate build caches for each target platform.
+      - name: Write cache key
+        run: echo '${{ github.job }} ${{ toJSON(matrix) }} ${{ hashFiles('go.sum') }}' > CACHE_KEY
+
+      - name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+          cache: true
+          cache-dependency-path: CACHE_KEY
+
+      - name: Create version file
+        run: git describe --tags --always --dirty > VERSION.txt
+
+      - name: Build
+        run: >
+          go
+          build
+          -v
+          -ldflags="-s -w"
+          -o $OUTPUT
+          .
+        env:
+          CGO_ENABLED: 0
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+      - name: Upload 
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ env.BUILDNAME }}
+          path: |
+            ${{ env.OUTPUT }}
+            README.md
+            VERSION.txt
+            LICENSE
+            examples/*.txt
+          if-no-files-found: error
