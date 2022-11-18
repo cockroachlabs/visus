@@ -16,6 +16,7 @@
 package server
 
 import (
+	"errors"
 	"os"
 	"os/signal"
 	"syscall"
@@ -41,6 +42,12 @@ func Command() *cobra.Command {
 ./visus start --bindAddr "127.0.0.1:15432" `,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+			if (cfg.BindCert == "" || cfg.BindKey == "") && !cfg.Insecure {
+				return errors.New("--insecure must be specfied if certificates and private key are missing")
+			}
+			if cfg.URL == "" {
+				return errors.New("--url must be specified")
+			}
 			conn, err := database.DefaultFactory.New(ctx, cfg.URL)
 			if err != nil {
 				return err
