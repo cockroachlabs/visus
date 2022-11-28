@@ -42,7 +42,7 @@ jobs:
             arch: arm64
             ext: .exe
     env:
-      BUILDNAME: visus-${{ matrix.os }}-${{ matrix.arch }}
+      BUILDNAME: visus-${{ github.ref_name }}-${{ matrix.os }}-${{ matrix.arch }}
       OUTPUT: visus-${{ matrix.os }}-${{ matrix.arch }}${{ matrix.ext }}
     steps:
       - uses: actions/checkout@v3

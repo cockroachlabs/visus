@@ -67,7 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: et up Go
+      - name: Set up Go
         uses: actions/setup-go@v3
         with:
           go-version: ${{ env.GO_VERSION }}
