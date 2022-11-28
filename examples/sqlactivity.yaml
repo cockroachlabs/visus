@@ -1,8 +1,8 @@
 name: sqlactivity
 enabled: true
 scope: node
-frequency: 10
-maxresults: 10
+frequency: 5
+maxresults: 20
 labels: [statement,application,database]
 metrics:
   - name : exec_count

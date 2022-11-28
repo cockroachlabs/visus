@@ -1,0 +1,89 @@
+name: cluster_sqlactivity
+enabled: true
+scope: node
+frequency: 20
+maxresults: 20
+labels: [statement,application,database]
+metrics:
+  - name : exec_count
+    kind : counter
+    help : number of times the statement was executed.
+  - name : net_bytes
+    kind : gauge
+    help : amount of data transferred over the network.
+  - name : max_disk
+    kind : gauge
+    help : maximum data transferred from the disk.
+  - name : run_lat
+    kind : gauge
+    help : average runtime.
+  - name : rows_read
+    kind : gauge
+    help : average number of rows read from disk. 
+  - name : rows_avg
+    kind : gauge
+    help : average number of rows returned.  
+  - name : bytes_avg
+    kind : gauge
+    help : average number of bytes read from disk.  
+  - name : total_lat
+    kind : gauge
+    help : total runtime for the statement.      
+  - name : max_retries
+    kind : gauge
+    help : cumulative number of automatic retries.      
+  - name : max_mem
+    kind : gauge
+    help : maximum memory used by the statement.          
+  - name : cont_time
+    kind : gauge
+    help : number of times the statement was executed.            
+query: 
+    WITH 
+    max AS (select max(aggregated_ts) from crdb_internal.statement_statistics),
+    total AS (
+    SELECT
+      encode(fingerprint_id, 'hex') as statement,
+      app_name as application,
+      metadata->'db' as database,
+      sum((statistics->'execution_statistics'->'cnt')::float8) AS exec_count,
+      max((statistics->'execution_statistics'->'maxDiskUsage'->'mean')::float8) AS max_disk,
+      sum((statistics->'execution_statistics'->'networkBytes'->'mean')::float8  * (statistics->'execution_statistics'->'cnt')::float8 )  AS net_bytes,
+      sum((statistics->'statistics'->'runLat'->'mean')::float8 * (statistics->'execution_statistics'->'cnt')::float8 ) AS run_lat,
+      sum((statistics->'statistics'->'rowsRead'->'mean')::float8 * (statistics->'execution_statistics'->'cnt')::float8 )  AS rows_read,
+      sum((statistics->'statistics'->'numRows'->'mean')::float8  * (statistics->'execution_statistics'->'cnt')::float8)  AS rows_num,
+      sum((statistics->'statistics'->'bytesRead'->'mean')::float8  * (statistics->'execution_statistics'->'cnt')::float8) AS bytes_read,
+      sum((statistics->'statistics'->'runLat'->'mean')::float8 *  (statistics->'execution_statistics'->'cnt')::float8) AS total_lat,
+      sum((statistics->'statistics'->'maxRetries'->'mean')::float8) AS max_retries,
+      max((statistics->'execution_statistics'->'maxMemUsage'->'mean')::float8) AS max_mem,
+      sum((statistics->'execution_statistics'->'contentionTime'->'mean')::float8  *  (statistics->'execution_statistics'->'cnt')::float8) AS cont_time
+    FROM
+      crdb_internal.statement_statistics
+    WHERE
+      app_name NOT LIKE '$ internal-%'
+      AND aggregated_ts = (select * from max)
+      AND aggregation_interval = '1h'  
+    GROUP BY
+      statement, application, database  
+  )
+  select 
+    statement, application, database,
+    exec_count,
+    net_bytes / exec_count as net_bytes,
+    max_disk,
+    run_lat / exec_count as  run_lat,
+    rows_read / exec_count as rows_read,
+    rows_num / exec_count as rows_avg,
+    bytes_read / exec_count as bytes_avg,
+    total_lat,
+    max_retries,
+    max_mem,
+    cont_time / exec_count as cont_time
+    FROM 
+    total  
+    WHERE exec_count > 0
+    
+    ORDER BY
+      total_lat DESC
+    LIMIT
+      $1;
