@@ -214,7 +214,7 @@ func (c *collector) AddGauge(name string, help string) error {
 		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
 		return err
 	}
-	log.Debugf("registering counter %s", metricName)
+	log.Debugf("registering gauge %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,
@@ -238,7 +238,7 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 		c.mu.inUse = false
 	}()
 	c.maybeInitCache()
-	c.resetGauges()
+
 	query := c.query
 	log.Debugf("Collect %s ", c.name)
 	log.Tracef("Collect %s query %s ", c.name, query)
@@ -248,9 +248,10 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 		return err
 	}
 	defer rows.Close()
-
+	c.resetGauges()
 	desc := rows.FieldDescriptions()
 	if len(desc) != len(c.labels)+len(c.metrics) {
+		log.Errorf("Collect mismatch %v %d %v \n", desc, len(c.labels), c.metrics)
 		return errors.New("columns returned in the query must be match labels+metrics")
 	}
 	for rows.Next() {
