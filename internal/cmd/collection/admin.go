@@ -153,7 +153,7 @@ func testCmd(factory database.Factory) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			conn, err := factory.New(ctx, databaseURL)
+			conn, err := factory.ReadOnly(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
