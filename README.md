@@ -1,4 +1,5 @@
 # visus
+
 Visus (latin for "the action of looking") enables users to collect metrics using arbitrary SQL queries and expose them in a Prometheus format. Optionally, it can be configured to filter the metrics CockroachDB available in the `/_status/vars` endpoint.
 
 Visus runs as a sidecar on each node of a CockroachDB cluster, as shown in the diagram below.
@@ -29,11 +30,12 @@ LIMIT
 
 The Prometheus collectors will add additional labels to track the cluster name as well as the instance where the metrics are coming from.
 
-## Database Security 
+## Database Security
+
 It is recommended to use separate users for managing the configuration and to run the sidecar.
 The sidecar needs `SELECT ON TABLES` privileges on the `_visus` database to read the configuration. It also needs the `SELECT,INSERT,UPDATE` privileges on the `_visus.node` table, used to determine which node should collect cluster wide metrics.  
 
-To run many of the sample collections available in the examples directory, 
+To run many of the sample collections available in the examples directory,
 the 'VIEWACTIVITY' option should be granted to the user.
 The `./visus init` command will provision a `visus` user with the minimal privileges to run the sidecar. Defining new collection may require additional privileges, depending on what data the SQL query associated to the collection has to access.
 
@@ -172,8 +174,9 @@ $VISUS_USER start --bind-addr :8888 --insecure --endpoint "/_status/custom"
 
 ## Histogram rewriting
 
-Visus can also act as a proxy to filter and rewrite CockroachDB histograms (v22.1 and earlier) from a log-2 linear format (HDR histograms) to a log-10 linear format. 
+Visus can also act as a proxy to filter and rewrite CockroachDB histograms (v22.1 and earlier) from a log-2 linear format (HDR histograms) to a log-10 linear format.
 Users can specify which histograms to rewrite based on a regular expression. For instance to rewrite all the histograms that match "^sql_exec_latency$" and keep buckets between 1ms and 20sec, we specify in the configuration file `latency.yaml`:
+
 ```yaml
 name: latency
 regex: ^sql_exec_latency$

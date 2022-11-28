@@ -53,11 +53,28 @@ type Connection interface {
 // New creates a new connection to the database.
 // It waits until a connection can be established, or the the context has been cancelled.
 func (f factory) New(ctx context.Context, URL string) (Connection, error) {
+	return f.new(ctx, URL, false)
+}
+
+// WithFollowerReads creates a new connection to the database with follower reads
+// It waits until a connection can be established, or the the context has been cancelled.
+func (f factory) WithFollowerReads(ctx context.Context, URL string) (Connection, error) {
+	return f.new(ctx, URL, true)
+}
+
+func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, error) {
 	var conn *pgxpool.Pool
 	sleepTime := int64(5)
 	poolConfig, err := pgxpool.ParseConfig(URL)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if ro {
+		poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+			log.Info("setting up a read only session")
+			_, err := conn.Exec(ctx, "set session default_transaction_use_follower_reads = true;")
+			return err
+		}
 	}
 	for {
 		conn, err = pgxpool.ConnectConfig(ctx, poolConfig)

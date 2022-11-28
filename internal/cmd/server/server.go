@@ -53,6 +53,11 @@ func Command() *cobra.Command {
 				return err
 			}
 			store := store.New(conn)
+			frConn, err := database.DefaultFactory.WithFollowerReads(ctx, cfg.URL)
+			if err != nil {
+				return err
+			}
+
 			registry := prometheus.NewRegistry()
 			// Run the httpServer in a separate context, so that we can
 			// control the shutdown process.
@@ -66,7 +71,7 @@ func Command() *cobra.Command {
 				return err
 			}
 
-			metricServer := metric.New(ctx, cfg, store, conn, registry)
+			metricServer := metric.New(ctx, cfg, store, frConn, registry)
 			err = metricServer.Start(ctx)
 			if err != nil {
 				return err
