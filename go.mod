@@ -5,10 +5,11 @@ go 1.19
 require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/crlfmt v0.0.0-20220610162206-024b567ce87b
+	github.com/creasty/defaults v1.6.0
 	github.com/go-co-op/gocron v1.18.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/jackc/pgconn v1.13.0
-	github.com/jackc/pgtype v1.12.0
+	github.com/jackc/pgtype v1.13.0
 	github.com/jackc/pgx/v4 v4.17.2
 	github.com/joonix/log v0.0.0-20200409080653-9c1d2ceb5f1d
 	github.com/pashagolub/pgxmock v1.8.0
@@ -32,7 +33,6 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/cockroachdb/gostdlib v1.13.0 // indirect
 	github.com/cockroachdb/ttycolor v0.0.0-20180709150743-a1d5aaeb377d // indirect
-	github.com/creasty/defaults v1.6.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
 	github.com/inconshreveable/mousetrap v1.0.1 // indirect
