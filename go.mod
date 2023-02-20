@@ -24,7 +24,7 @@ require (
 	golang.org/x/tools v0.4.1-0.20221208213631-3f74d914ae6d
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/yaml.v3 v3.0.1
-	honnef.co/go/tools v0.4.0
+	honnef.co/go/tools v0.4.2
 )
 
 require (
