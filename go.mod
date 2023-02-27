@@ -19,7 +19,7 @@ require (
 	github.com/prometheus/common v0.39.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
 	golang.org/x/tools v0.4.1-0.20221208213631-3f74d914ae6d
 	google.golang.org/protobuf v1.28.1
