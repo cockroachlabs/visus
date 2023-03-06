@@ -10,7 +10,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/jackc/pgconn v1.14.0
 	github.com/jackc/pgtype v1.14.0
-	github.com/jackc/pgx/v4 v4.18.0
+	github.com/jackc/pgx/v4 v4.18.1
 	github.com/joonix/log v0.0.0-20200409080653-9c1d2ceb5f1d
 	github.com/pashagolub/pgxmock v1.8.0
 	github.com/pkg/errors v0.9.1
