@@ -22,7 +22,7 @@ require (
 	github.com/stretchr/testify v1.8.1
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
 	golang.org/x/tools v0.4.1-0.20221208213631-3f74d914ae6d
-	google.golang.org/protobuf v1.28.1
+	google.golang.org/protobuf v1.30.0
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.4.2
 )
