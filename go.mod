@@ -6,7 +6,7 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/crlfmt v0.0.0-20220610162206-024b567ce87b
 	github.com/creasty/defaults v1.6.0
-	github.com/go-co-op/gocron v1.18.0
+	github.com/go-co-op/gocron v1.31.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/jackc/pgconn v1.14.0
 	github.com/jackc/pgtype v1.14.0
@@ -19,7 +19,7 @@ require (
 	github.com/prometheus/common v0.39.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/spf13/cobra v1.6.1
-	github.com/stretchr/testify v1.8.1
+	github.com/stretchr/testify v1.8.2
 	golang.org/x/lint v0.0.0-20200302205851-738671d3881b
 	golang.org/x/tools v0.4.1-0.20221208213631-3f74d914ae6d
 	google.golang.org/protobuf v1.28.1
@@ -47,10 +47,10 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	go.uber.org/atomic v1.9.0 // indirect
 	golang.org/x/crypto v0.6.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
 	golang.org/x/mod v0.7.0 // indirect
-	golang.org/x/sync v0.1.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
 	google.golang.org/genproto v0.0.0-20200825200019-8632dd797987 // indirect
