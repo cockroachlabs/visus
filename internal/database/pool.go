@@ -17,6 +17,8 @@ package database
 
 import (
 	"context"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgconn"
@@ -71,12 +73,29 @@ func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, erro
 	if err != nil {
 		log.Fatal(err)
 	}
-	if ro {
-		poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+	priority := strings.TrimSpace(strings.ToLower(os.Getenv("TX_PRIORITY")))
+	switch priority {
+	case "low", "high":
+		break
+	default:
+		priority = ""
+	}
+	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		if ro {
 			log.Debug("setting up a read only session")
 			_, err := conn.Exec(ctx, "set session default_transaction_use_follower_reads = true;")
-			return err
+			if err != nil {
+				return err
+			}
 		}
+		if priority != "" {
+			log.Debugf("setting transaction priority to %s", priority)
+			_, err := conn.Exec(ctx, "set default_transaction_priority = $1;", priority)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	for {
 		conn, err = pgxpool.ConnectConfig(ctx, poolConfig)
