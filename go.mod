@@ -6,7 +6,7 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/crlfmt v0.0.0-20230505164321-461e8663b4b4
 	github.com/creasty/defaults v1.7.0
-	github.com/go-co-op/gocron v1.35.3
+	github.com/go-co-op/gocron v1.36.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/jackc/pgconn v1.14.1
 	github.com/jackc/pgtype v1.14.0
