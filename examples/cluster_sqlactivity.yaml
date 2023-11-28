@@ -1,6 +1,10 @@
+# Note: This query is meant to be executed at a cluster level, 
+# and very low frequency. 
+# If visus is deployed in a self hosted cluster as a sidecar for each node, 
+# sqlactivity.yaml should be used instead.
 name: cluster_sqlactivity
 enabled: true
-scope: node
+scope: cluster
 frequency: 20
 maxresults: 20
 labels: [statement,application,database]
@@ -40,7 +44,7 @@ metrics:
     help : number of times the statement was executed.            
 query: 
     WITH 
-    max AS (select max(aggregated_ts) from crdb_internal.statement_statistics),
+    max AS (select max(aggregated_ts) from system.statement_statistics),
     total AS (
     SELECT
       encode(fingerprint_id, 'hex') as statement,
