@@ -1,6 +1,6 @@
 module github.com/cockroachlabs/visus
 
-go 1.19
+go 1.21
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
