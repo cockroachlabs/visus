@@ -20,7 +20,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pashagolub/pgxmock"
+	"github.com/pashagolub/pgxmock/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -64,7 +64,7 @@ func assertions(t *testing.T) (*assert.Assertions, *require.Assertions) {
 	return assert.New(t), require.New(t)
 }
 
-func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, rows []sample) {
+func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxPoolIface, rows []sample) {
 	columns := []string{"label", "gauge", "counter"}
 	query := mock.ExpectQuery("SELECT label, counter, gauge from test limit .+").WithArgs(maxResults)
 	res := mock.NewRows(columns)
@@ -77,7 +77,7 @@ func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, r
 }
 func TestCollector_Collect(t *testing.T) {
 	a, r := assertions(t)
-	mock, err := pgxmock.NewConn()
+	mock, err := pgxmock.NewPool()
 	r.NoError(err)
 	coll := New("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1").
 		WithMaxResults(maxResults)

@@ -26,7 +26,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/golang/groupcache/lru"
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
@@ -279,9 +279,8 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 					case int:
 						c.counterAdd(vec, metric.name, labels, float64(value))
 					case pgtype.Numeric:
-						var floatValue float64
-						value.AssignTo(&floatValue)
-						c.counterAdd(vec, metric.name, labels, floatValue)
+						v, _ := value.Float64Value()
+						c.counterAdd(vec, metric.name, labels, v.Float64)
 					case nil:
 					default:
 						log.Errorf("%s unknown type %T for %s", c.name, v, metric.name)
@@ -293,9 +292,8 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 					case int:
 						c.gaugeSet(vec, metric.name, labels, float64(value))
 					case pgtype.Numeric:
-						var floatValue float64
-						value.AssignTo(&floatValue)
-						c.gaugeSet(vec, metric.name, labels, floatValue)
+						v, _ := value.Float64Value()
+						c.gaugeSet(vec, metric.name, labels, v.Float64)
 					case nil:
 					default:
 						log.Errorf("%s unknown type %T for %s", c.name, v, metric.name)

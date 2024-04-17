@@ -19,9 +19,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -42,24 +42,21 @@ var DefaultFactory = &factory{}
 // Connection defines the methods to access the database.
 type Connection interface {
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
-	QueryFunc(ctx context.Context, sql string, args []interface{}, scans []interface{}, f func(pgx.QueryFuncRow) error) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 	Begin(ctx context.Context) (pgx.Tx, error)
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
-	BeginFunc(ctx context.Context, f func(pgx.Tx) error) error
-	BeginTxFunc(ctx context.Context, txOptions pgx.TxOptions, f func(pgx.Tx) error) error
 }
 
 // New creates a new connection to the database.
-// It waits until a connection can be established, or the the context has been cancelled.
+// It waits until a connection can be established, or the context has been cancelled.
 func (f factory) New(ctx context.Context, URL string) (Connection, error) {
 	return f.new(ctx, URL, false)
 }
 
 // ReadOnly creates a new connection to the database with follower reads
-// It waits until a connection can be established, or the the context has been cancelled.
+// It waits until a connection can be established, or the context has been cancelled.
 func (f factory) ReadOnly(ctx context.Context, URL string) (Connection, error) {
 	return f.new(ctx, URL, true)
 }
@@ -79,7 +76,7 @@ func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, erro
 		}
 	}
 	for {
-		conn, err = pgxpool.ConnectConfig(ctx, poolConfig)
+		conn, err = pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
 			log.Error(err)
 			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)

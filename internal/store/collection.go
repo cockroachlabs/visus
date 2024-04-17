@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -222,7 +222,7 @@ func (s *store) PutCollection(ctx context.Context, collection *Collection) error
 func (c *Collection) String() string {
 
 	return fmt.Sprintf(`Collection: %s
-Enabled:    %t 
+Enabled:    %t
 Updated:    %s
 Labels:     %s
 Query:      %s

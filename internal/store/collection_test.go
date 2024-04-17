@@ -21,14 +21,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jackc/pgtype"
-	"github.com/pashagolub/pgxmock"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pashagolub/pgxmock/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestGetCollectionNames(t *testing.T) {
-	mock, err := pgxmock.NewConn()
+	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	store := New(mock)
 	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
@@ -52,7 +52,7 @@ func TestGetCollectionNames(t *testing.T) {
 }
 
 func TestDeleteCollection(t *testing.T) {
-	mock, err := pgxmock.NewConn()
+	mock, err := pgxmock.NewPool()
 	require.NoError(t, err)
 	store := New(mock)
 	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
@@ -103,7 +103,7 @@ func TestGetCollection(t *testing.T) {
 		}, false},
 	}
 	for _, tt := range tests {
-		mock, err := pgxmock.NewConn()
+		mock, err := pgxmock.NewPool()
 		store := New(mock)
 		require.NoError(t, err)
 		collQuery := mock.ExpectQuery("select name, updated, enabled, scope, maxResults, frequency, query, labels from _visus.collection where name = .+").
@@ -130,7 +130,7 @@ func TestGetCollection(t *testing.T) {
 		coll, err := store.GetCollection(ctx, tt.name)
 		require.NoError(t, err)
 		assert.Equal(t, tt.collection, coll)
-		mock.Close(ctx)
+		mock.Close()
 	}
 }
 
@@ -170,7 +170,7 @@ func TestPutCollection(t *testing.T) {
 		}, false},
 	}
 	for _, tt := range tests {
-		mock, err := pgxmock.NewConn()
+		mock, err := pgxmock.NewPool()
 		store := New(mock)
 		require.NoError(t, err)
 		mock.ExpectBegin()
@@ -189,6 +189,6 @@ func TestPutCollection(t *testing.T) {
 		}
 		err = store.PutCollection(ctx, tt.collection)
 		require.NoError(t, err)
-		mock.Close(ctx)
+		mock.Close()
 	}
 }
