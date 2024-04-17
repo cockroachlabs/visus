@@ -1,0 +1,4 @@
+# HELP crdb_all all events
+# TYPE crdb_all counter
+crdb_all{level="I",source="cli/start.go"} 6
+crdb_all{level="I",source="server/config.go"} 3

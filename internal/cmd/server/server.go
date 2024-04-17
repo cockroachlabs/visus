@@ -66,7 +66,7 @@ func Command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer httpServer.Shutdown(ctx)
+			defer httpServer.Stop(ctx)
 			err = httpServer.Start(ctx)
 			if err != nil {
 				return err
@@ -77,7 +77,7 @@ func Command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer metricServer.Shutdown(ctx)
+			defer metricServer.Stop(ctx)
 
 			signalChan := make(chan os.Signal, 1)
 			signal.Notify(signalChan, syscall.SIGHUP)
@@ -88,10 +88,18 @@ func Command() *cobra.Command {
 					switch s {
 					case syscall.SIGHUP:
 						log.Info("Refreshing configuration")
-						metricServer.Refresh(ctx)
-						httpServer.Refresh(ctx)
-						roConn.Refresh(ctx)
-						conn.Refresh(ctx)
+						if err := metricServer.Refresh(ctx); err != nil {
+							log.Errorf("refreshing metrics %q", err)
+						}
+						if err := httpServer.Refresh(ctx); err != nil {
+							log.Errorf("refreshing http  %q", err)
+						}
+						if err := roConn.Refresh(ctx); err != nil {
+							log.Errorf("refreshing read only db connection %q", err)
+						}
+						if err := conn.Refresh(ctx); err != nil {
+							log.Errorf("refreshing db connection %q", err)
+						}
 					}
 				}
 			}()
@@ -113,6 +121,7 @@ func Command() *cobra.Command {
 		"How ofter to refresh the configuration from the database.")
 	f.StringVar(&cfg.Endpoint, "endpoint", "/_status/vars",
 		"Endpoint for metrics.")
+	f.BoolVar(&cfg.Inotify, "inotify", false, "enable inotify for scans")
 	f.BoolVar(&cfg.Insecure, "insecure", false, "this flag must be set if no TLS configuration is provided")
 	f.BoolVar(&cfg.ProcMetrics, "proc-metrics", false, "enable the collection of process metrics")
 	f.BoolVar(&cfg.VisusMetrics, "visus-metrics", false, "enable the collection of visus metrics")

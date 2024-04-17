@@ -24,6 +24,7 @@ type Config struct {
 	CaCert            string        // Path to the Root CA.
 	Endpoint          string        // Endpoint for metrics
 	RewriteHistograms bool          // Enable histogram rewriting
+	Inotify           bool          // Enable inotify for scans.
 	Insecure          bool          // Sanity check to ensure that the operator really means it.
 	Prometheus        string        // URL for the node prometheus endpoint
 	Refresh           time.Duration // how often to refresh the configuration.

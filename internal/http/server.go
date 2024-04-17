@@ -20,6 +20,7 @@ import (
 	"crypto/tls"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/NYTimes/gziphandler"
@@ -27,6 +28,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
 	"github.com/go-co-op/gocron"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
@@ -41,6 +43,10 @@ type serverImpl struct {
 	store           store.Store
 	scheduler       *gocron.Scheduler
 	registry        *prometheus.Registry
+	mu              struct {
+		sync.Mutex
+		shutdownCalled bool
+	}
 }
 
 // New constructs a http server to server the metrics
@@ -84,6 +90,7 @@ func New(
 	}, nil
 }
 
+// Refresh implements server.Server
 func (s *serverImpl) Refresh(ctx context.Context) error {
 	if err := s.keyPair.load(); err != nil {
 		return err
@@ -117,6 +124,10 @@ func (s *serverImpl) Refresh(ctx context.Context) error {
 // Start the server and wait for new connections.
 // It uses the default prometheus handler to return the metric value to the caller.
 func (s *serverImpl) Start(ctx context.Context) error {
+	if s.Stopped() {
+		// We don't restart if shutdown was called.
+		return errors.New("shutdown was called")
+	}
 	s.scheduler.Every(s.config.Refresh).
 		Do(func() {
 			s.Refresh(ctx)
@@ -167,11 +178,19 @@ func (s *serverImpl) Start(ctx context.Context) error {
 	return nil
 }
 
-func (s *serverImpl) Shutdown(ctx context.Context) error {
-	log.Info("Shutting down ")
+func (s *serverImpl) Stop(ctx context.Context) error {
+	log.Info("Shutting down http server")
+	s.mu.Lock()
+	s.mu.shutdownCalled = true
+	s.mu.Unlock()
 	return s.httpServer.Shutdown(ctx)
 }
 
+func (s *serverImpl) Stopped() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mu.shutdownCalled
+}
 func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error) {
 	log.Errorf("%s: %s", msg, err.Error())
 	w.WriteHeader(http.StatusInternalServerError)

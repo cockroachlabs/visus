@@ -1,6 +1,6 @@
 # visus
 
-Visus (latin for "the action of looking") enables users to collect metrics using arbitrary SQL queries and expose them in a Prometheus format. Optionally, it can be configured to filter the metrics CockroachDB available in the `/_status/vars` endpoint.
+Visus (latin for "the action of looking") enables users to collect metrics using arbitrary SQL queries and expose them in a Prometheus format. Optionally, it can be configured to extracts metrics from logs and filter the metrics CockroachDB available in the `/_status/vars` endpoint.
 
 Visus runs as a sidecar on each node of a CockroachDB cluster, as shown in the diagram below.
 It can also be used for any database that is compatible with the Postgres wire protocol.
@@ -172,6 +172,43 @@ Start the server to enable collection of metrics from Prometheus.
 $VISUS_USER start --bind-addr :8888 --insecure --endpoint "/_status/custom" 
 ```
 
+## Scanning logs
+
+Visus can also be used to scan cockroachdb log files: it will produce metrics
+for the events in the logs, adding labels for the level and the source of the
+event. For instance to collect all the events in the cockroack.log file, define
+a scan configuration `log.yaml` as follows:
+
+```yaml
+name: cockroach_log
+enabled: true
+format: crdb-v2
+path: /var/log/cockroach.log
+patterns:
+  - name : events
+    regex:
+    help : number of events
+```
+
+Insert the scan configuration in the database:
+
+```bash
+$VISUS_ADMIN  scan put --yaml - < log.yaml
+```
+
+Example of the metrics produced:
+
+```text
+# HELP cockroach_log_events number of events
+# TYPE cockroach_log_events counter
+cockroach_log_events{level="I",source="cli/log_flags.go"} 6
+cockroach_log_events{level="I",source="cli/start.go"} 102
+cockroach_log_events{level="I",source="gossip/client.go"} 9
+cockroach_log_events{level="I",source="gossip/gossip.go"} 6
+cockroach_log_events{level="I",source="jobs/job_scheduler.go"} 3
+cockroach_log_events{level="I",source="jobs/registry.go"} 12
+```
+
 ## Histogram rewriting
 
 Visus can also act as a proxy to filter and rewrite CockroachDB histograms (v22.1 and earlier) from a log-2 linear format (HDR histograms) to a log-10 linear format.
@@ -249,6 +286,33 @@ Global Flags:
   -v, --verbose count           increase logging verbosity to debug; repeat for trace
 
 Use "visus collection [command] --help" for more information about a command.
+```
+
+### Scan management commands
+
+Use the `visus scan` command to manage the log scans in the database.
+
+```text
+Usage:
+  visus scan [command]
+
+Available Commands:
+  delete
+  get
+  list
+  put
+  test
+
+Flags:
+  -h, --help         help for scan
+      --url string   Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
+
+Global Flags:
+      --logDestination string   write logs to a file, instead of stdout
+      --logFormat string        choose log output format [ fluent, text ] (default "text")
+  -v, --verbose count           increase logging verbosity to debug; repeat for trace
+
+Use "visus scan [command] --help" for more information about a command.
 ```
 
 ### Histogram filter management commands

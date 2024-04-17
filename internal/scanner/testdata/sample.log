@@ -1,0 +1,9 @@
+I240418 15:31:56.563605 1 1@cli/start.go:1316 ⋮ [T1,n?] 8  using local environment variables:
+I240418 15:31:56.563605 1 1@cli/start.go:1316 ⋮ [T1,n?] 8 +LANG=‹en_US.UTF-8›
+I240418 15:31:56.563605 1 1@cli/start.go:1316 ⋮ [T1,n?] 8 +TERM=‹xterm-256color›
+I240418 15:31:56.563621 1 1@cli/start.go:1323 ⋮ [T1,n?] 9  process identity: ‹uid 503 euid 503 gid 20 egid 20›
+I240418 15:31:56.565946 1 1@cli/start.go:1478 ⋮ [T1,n?] 10  GEOS loaded from directory ‹/usr/local/lib/cockroach›
+I240418 15:31:56.565968 1 1@cli/start.go:779 ⋮ [T1,n?] 11  starting cockroach node
+I240418 15:31:56.801319 97 server/config.go:860 ⋮ [T1,n?] 12  1 storage engine initialized
+I240418 15:31:56.801348 97 server/config.go:863 ⋮ [T1,n?] 13  Pebble cache size: 128 MiB
+I240418 15:31:56.801363 97 server/config.go:863 ⋮ [T1,n?] 14  store 0: max size 0 B, max open file limit 117880

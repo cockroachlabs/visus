@@ -187,7 +187,7 @@ func (c *collector) AddCounter(name string, help string) error {
 	if err := c.registerer.Register(vec); err != nil {
 		return err
 	}
-	log.Debugf("registering counter %s", metricName)
+	log.Tracef("registering counter %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,
@@ -214,7 +214,7 @@ func (c *collector) AddGauge(name string, help string) error {
 		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
 		return err
 	}
-	log.Debugf("registering gauge %s", metricName)
+	log.Tracef("registering gauge %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,

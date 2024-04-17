@@ -12,17 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package server implements an http server to export metrics in Prometheus format.
+// Package server defines the common behavior of a process that reads a configuratio
+// and runs a task.
 package server
 
 import "context"
 
-// A Server is a process that can be started and shutdown.
+// A Task can be started and stopped.
+type Task interface {
+	// Start the task
+	Start(ctx context.Context) error
+	// Stop the task, releasing all the resources associated with it.
+	Stop(ctx context.Context) error
+	Stopped() bool
+}
+
+// A Server is a task that has a configuration that can be refreshed.
 type Server interface {
+	Task
 	// Refresh the server configuration
 	Refresh(ctx context.Context) error
-	// Start the server
-	Start(ctx context.Context) error
-	// Shutdown the server, releasing all the resources associated with it.
-	Shutdown(ctx context.Context) error
 }
