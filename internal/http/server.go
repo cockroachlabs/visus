@@ -17,6 +17,8 @@ package http
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"net/http"
 	"time"
 
@@ -45,6 +47,11 @@ func New(
 ) (server.Server, error) {
 	httpServer := &http.Server{
 		Addr: cfg.BindAddr,
+	}
+	if cfg.ReloadCertificates && !cfg.Insecure && (cfg.BindCert == "" || cfg.BindKey == "") {
+		httpServer.TLSConfig = &tls.Config{
+			GetCertificate: cfg.GetTLSServerCertificate,
+		}
 	}
 	server := &serverImpl{
 		config:      cfg,
@@ -122,12 +129,14 @@ func (s *serverImpl) Start(ctx context.Context) error {
 		var err error
 		if !s.config.Insecure {
 			log.Infof("Starting secure server: %v", s.config.BindAddr)
-			err = s.httpServer.ListenAndServeTLS(s.config.BindCert, s.config.BindKey)
+			// passing empty strings here as the httpServer config
+			// already has the TlSConfig configured
+			err = s.httpServer.ListenAndServeTLS("", "")
 		} else {
 			log.Infof("Starting server: %v", s.config.BindAddr)
 			err = s.httpServer.ListenAndServe()
 		}
-		if err != http.ErrServerClosed {
+		if !errors.Is(err, http.ErrServerClosed) {
 			log.Fatal("Error starting server: ", err)
 		}
 	}()

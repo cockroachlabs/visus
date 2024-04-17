@@ -61,3 +61,12 @@ func (c *Config) GetTLSClientConfig() (*tls.Config, error) {
 		RootCAs: caCertPool,
 	}, nil
 }
+
+// GetTLSServerCertificate returns the TLS configuration to use for incoming http connections.
+func (c *Config) GetTLSServerCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	cert, err := tls.LoadX509KeyPair(c.BindCert, c.BindKey)
+	if err != nil {
+		return nil, err
+	}
+	return &cert, nil
+}

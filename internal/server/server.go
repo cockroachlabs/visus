@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package server implements an http server to export metrics in Prometheus format.
+// Package server implements a http server to export metrics in Prometheus format.
 package server
 
 import "context"
