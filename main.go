@@ -25,7 +25,9 @@ import (
 	"github.com/cockroachlabs/visus/internal/cmd/collection"
 	"github.com/cockroachlabs/visus/internal/cmd/histogram"
 	"github.com/cockroachlabs/visus/internal/cmd/initialize"
+	"github.com/cockroachlabs/visus/internal/cmd/scan"
 	"github.com/cockroachlabs/visus/internal/cmd/server"
+	"github.com/cockroachlabs/visus/internal/stopper"
 	joonix "github.com/joonix/log"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -93,14 +95,33 @@ func main() {
 
 	root.AddCommand(server.Command())
 	root.AddCommand(collection.Command())
+	root.AddCommand(scan.Command())
 	root.AddCommand(histogram.Command())
 	root.AddCommand(initialize.Command())
+	gracePeriod := 5 * time.Second
+	stop := stopper.WithContext(context.Background())
+	// Stop cleanly on interrupt.
+	stop.Go(func() error {
+		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+		defer cancel()
+		select {
+		case <-ctx.Done():
+			log.Info("Interrupted")
+			stop.Stop(gracePeriod)
+		case <-stop.Stopping():
+			// Nothing to do.
+		}
+		return nil
+	})
+	// Allow log.Exit() or log.Fatal() to trigger shutdown.
+	log.DeferExitHandler(func() {
+		stop.Stop(gracePeriod)
+		<-stop.Done()
+	})
 
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer cancel()
-
-	if err := root.ExecuteContext(ctx); err != nil {
-		log.WithError(err).Error("could not execute command")
+	// Passing the stopper down to the commands.
+	if err := root.ExecuteContext(stop); err != nil {
+		log.WithError(err).Error("exited")
 		log.Exit(1)
 	}
 	log.Exit(0)

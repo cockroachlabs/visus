@@ -1,0 +1,33 @@
+I240514 21:09:45.223164 125 util/log/file_sync_buffer.go:238 ⋮ [config]   file created at: 2024/05/14 21:09:45
+I240514 21:09:45.223171 125 util/log/file_sync_buffer.go:238 ⋮ [config]   running on machine: ‹crlMBP-C02FV1N5MD6TMjk4.local›
+I240514 21:09:45.223178 125 util/log/file_sync_buffer.go:238 ⋮ [config]   binary: CockroachDB CCL v23.1.12 (x86_64-apple-darwin19, built 2023/11/09 06:34:18, go1.19.13)
+I240514 21:09:45.223183 125 util/log/file_sync_buffer.go:238 ⋮ [config]   arguments: [‹cockroach› ‹start-single-node› ‹--insecure› ‹--listen-addr=localhost:26257› ‹--http-addr=localhost:8080›]
+I240514 21:09:45.223192 125 util/log/file_sync_buffer.go:238 ⋮ [config]   log format (utf8=✓): crdb-v2
+I240514 21:09:45.223196 125 util/log/file_sync_buffer.go:238 ⋮ [config]   line format: [IWEF]yymmdd hh:mm:ss.uuuuuu goid [chan@]file:line redactionmark \[tags\] [counter] msg
+I240514 21:09:45.222952 125 3@pebble/event.go:697 ⋮ [n?,s?,pebble] 1  [JOB 1] flushing: sstable created 031355
+I240514 21:09:45.332616 125 3@pebble/event.go:689 ⋮ [n?,s?,pebble] 2  [JOB 1] MANIFEST created 031357
+I240514 21:09:45.352052 125 3@pebble/event.go:717 ⋮ [n?,s?,pebble] 3  [JOB 1] WAL created 031356
+I240514 21:09:45.392242 56 3@pebble/event.go:665 ⋮ [n?,s?,pebble] 4  [JOB 2] compacting(default) L0 [031355] (268 K) + L5 [031347 031348 031349 031350 031351 031352 031353 031354] (20 M)
+I240514 21:09:45.392453 54 3@pebble/event.go:721 ⋮ [n?,s?,pebble] 5  [JOB 1] WAL deleted 031322
+I240514 21:09:45.394739 54 3@pebble/event.go:721 ⋮ [n?,s?,pebble] 6  [JOB 1] WAL deleted 031335
+I240514 21:09:45.396186 54 3@pebble/event.go:721 ⋮ [n?,s?,pebble] 7  [JOB 1] WAL deleted 031345
+I240514 21:09:45.401660 54 3@pebble/event.go:693 ⋮ [n?,s?,pebble] 8  [JOB 1] MANIFEST deleted 030960
+I240514 21:09:45.404496 56 3@pebble/event.go:697 ⋮ [n?,s?,pebble] 9  [JOB 2] compacting: sstable created 031359
+I240514 21:09:45.420728 27 3@pebble/event.go:709 ⋮ [n?,s?,pebble] 10  [JOB 4] all initial table stats loaded
+I240514 21:09:45.468735 125 3@pebble/event.go:689 ⋮ [n?,s?,pebble] 11  [JOB 1] MANIFEST created 000001
+I240514 21:09:45.513105 125 3@pebble/event.go:717 ⋮ [n?,s?,pebble] 12  [JOB 1] WAL created 000002
+I240514 21:09:45.582136 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 13  upgraded to format version: ‹002›
+I240514 21:09:45.647154 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 14  upgraded to format version: ‹003›
+I240514 21:09:45.684187 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 15  upgraded to format version: ‹004›
+I240514 21:09:45.723492 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 16  upgraded to format version: ‹005›
+I240514 21:09:45.743039 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 17  upgraded to format version: ‹006›
+I240514 21:09:45.762086 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 18  upgraded to format version: ‹007›
+I240514 21:09:45.782006 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 19  upgraded to format version: ‹008›
+I240514 21:09:45.802019 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 20  upgraded to format version: ‹009›
+I240514 21:09:45.821098 125 3@pebble/event.go:685 ⋮ [n?,s?,pebble] 21  upgraded to format version: ‹010›
+I240514 21:09:45.861105 105 3@pebble/event.go:709 ⋮ [n?,s?,pebble] 22  [JOB 4] all initial table stats loaded
+I240514 21:09:46.047960 56 3@pebble/event.go:697 ⋮ [n1,s?,pebble] 23  [JOB 2] compacting: sstable created 031360
+I240514 21:09:46.219838 56 3@pebble/event.go:697 ⋮ [n1,s?,pebble] 24  [JOB 2] compacting: sstable created 031361
+I240514 21:09:46.317406 56 3@pebble/event.go:697 ⋮ [n1,s?,pebble] 25  [JOB 2] compacting: sstable created 031362
+I240514 21:09:46.595958 56 3@pebble/event.go:697 ⋮ [n1,s1,pebble] 26  [JOB 2] compacting: sstable created 031363
+I240514 21:09:47.386998 56 3@pebble/event.go:697 ⋮ [n1,s1,pebble] 27  [JOB 2] compacting: sstable created 031364

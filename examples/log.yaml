@@ -1,0 +1,8 @@
+name: cockroach_log
+enabled: true
+format: crdb-v2
+path: /home/ubuntu/logs/cockroach.log
+patterns:
+  - name : events
+    regex:
+    help : number of events
