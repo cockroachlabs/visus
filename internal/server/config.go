@@ -25,17 +25,18 @@ import (
 // Config encapsulates the command-line configurations and the logic
 // necessary to make those values usable.
 type Config struct {
-	BindAddr          string        // Address to bind the server to.
-	BindCert, BindKey string        // Paths to Certificate and Key.
-	CaCert            string        // Path to the Root CA.
-	Endpoint          string        // Endpoint for metrics
-	RewriteHistograms bool          // Enable histogram rewriting
-	Insecure          bool          // Sanity check to ensure that the operator really means it.
-	Prometheus        string        // URL for the node prometheus endpoint
-	Refresh           time.Duration // how often to refresh the configuration.
-	URL               string        // URL to connect to the database
-	ProcMetrics       bool          // Enable collections of process metrics.
-	VisusMetrics      bool          // Enable collection of visus metrics.
+	BindAddr           string        // Address to bind the server to.
+	BindCert, BindKey  string        // Paths to Certificate and Key.
+	CaCert             string        // Path to the Root CA.
+	Endpoint           string        // Endpoint for metrics
+	RewriteHistograms  bool          // Enable histogram rewriting
+	Insecure           bool          // Sanity check to ensure that the operator really means it.
+	Prometheus         string        // URL for the node prometheus endpoint
+	Refresh            time.Duration // how often to refresh the configuration.
+	URL                string        // URL to connect to the database
+	ProcMetrics        bool          // Enable collections of process metrics.
+	VisusMetrics       bool          // Enable collection of visus metrics.
+	ReloadCertificates bool          // Enable reloading certificates
 }
 
 // GetTLSClientConfig returns the TLS configuration to use for outgoing http connections.

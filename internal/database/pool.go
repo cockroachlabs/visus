@@ -17,6 +17,8 @@ package database
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -25,12 +27,23 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+// FactoryConfig is the configuration struct for creating database connections.
+type FactoryConfig struct {
+	readOnly           bool
+	ReloadCertificates bool
+	ConnectionUrl      string
+}
+
 // Factory creates database connections
 type Factory interface {
-	//New creates a new connection to the database.
-	New(ctx context.Context, URL string) (Connection, error)
+	//New creates a new read/write connection to the database.
+	New(ctx context.Context, connectionUrl string) (Connection, error)
+	//NewWithConfig creates a new read/write connection to the database. Config must be [FactoryConfig]
+	NewWithConfig(ctx context.Context, opts *FactoryConfig) (Connection, error)
 	//ReadOnly creates a read only connection to the database.
-	ReadOnly(ctx context.Context, URL string) (Connection, error)
+	ReadOnly(ctx context.Context, connectionUrl string) (Connection, error)
+	//ReadOnlyWithConfig creates a read only connection to the database. Config must be [FactoryConfig]
+	ReadOnlyWithConfig(ctx context.Context, opts *FactoryConfig) (Connection, error)
 }
 
 type factory struct {
@@ -47,32 +60,78 @@ type Connection interface {
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 	Begin(ctx context.Context) (pgx.Tx, error)
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+	Reset()
 }
 
-// New creates a new connection to the database.
+// New creates a new read/write connection to the database.
 // It waits until a connection can be established, or the context has been cancelled.
-func (f factory) New(ctx context.Context, URL string) (Connection, error) {
-	return f.new(ctx, URL, false)
+func (f factory) New(ctx context.Context, connectionUrl string) (Connection, error) {
+	return f.new(ctx, &FactoryConfig{
+		readOnly:      false,
+		ConnectionUrl: connectionUrl,
+	})
+}
+
+// NewWithConfig creates a new read/write connection to the database. Config must be [FactoryConfig]
+// It waits until a connection can be established, or the context has been cancelled.
+func (f factory) NewWithConfig(ctx context.Context, cfg *FactoryConfig) (Connection, error) {
+	cfg.readOnly = false
+	return f.new(ctx, cfg)
 }
 
 // ReadOnly creates a new connection to the database with follower reads
 // It waits until a connection can be established, or the context has been cancelled.
-func (f factory) ReadOnly(ctx context.Context, URL string) (Connection, error) {
-	return f.new(ctx, URL, true)
+func (f factory) ReadOnly(ctx context.Context, connectionUrl string) (Connection, error) {
+	return f.new(ctx, &FactoryConfig{
+		readOnly:      true,
+		ConnectionUrl: connectionUrl,
+	})
 }
 
-func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, error) {
+// ReadOnlyWithConfig creates a new connection to the database with follower reads. Config must be [FactoryConfig]
+// It waits until a connection can be established, or the context has been cancelled.
+func (f factory) ReadOnlyWithConfig(ctx context.Context, cfg *FactoryConfig) (Connection, error) {
+	cfg.readOnly = true
+	return f.new(ctx, cfg)
+}
+
+func (f factory) new(ctx context.Context, cfg *FactoryConfig) (Connection, error) {
 	var conn *pgxpool.Pool
 	sleepTime := int64(5)
-	poolConfig, err := pgxpool.ParseConfig(URL)
+	if cfg.ConnectionUrl == "" {
+		return nil, errors.New("URL is required")
+	}
+	connectionUrl := cfg.ConnectionUrl
+	poolConfig, err := pgxpool.ParseConfig(connectionUrl)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if ro {
+	if cfg.readOnly {
 		poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 			log.Debug("setting up a read only session")
 			_, err := conn.Exec(ctx, "set session default_transaction_use_follower_reads = true;")
 			return err
+		}
+	}
+	if cfg.ReloadCertificates && poolConfig.ConnConfig.TLSConfig != nil {
+		loadCertFunc := func(_ *tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			log.Debug("loading pool tls certificate")
+			c, parseErr := pgxpool.ParseConfig(connectionUrl)
+			if parseErr != nil {
+				log.Error(parseErr)
+				return nil, parseErr
+			}
+			if len(c.ConnConfig.TLSConfig.Certificates) > 0 {
+				return &c.ConnConfig.TLSConfig.Certificates[0], nil
+			}
+			return nil, errors.New("tls certificate not found")
+		}
+
+		poolConfig.ConnConfig.TLSConfig.GetClientCertificate = loadCertFunc
+		for _, fb := range poolConfig.ConnConfig.Fallbacks {
+			if fb.TLSConfig != nil {
+				fb.TLSConfig.GetClientCertificate = loadCertFunc
+			}
 		}
 	}
 	for {

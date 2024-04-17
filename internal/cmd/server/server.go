@@ -43,17 +43,21 @@ func Command() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			if (cfg.BindCert == "" || cfg.BindKey == "") && !cfg.Insecure {
-				return errors.New("--insecure must be specfied if certificates and private key are missing")
+				return errors.New("--insecure must be specified if certificates and private key are missing")
+			}
+			factoryCfg := &database.FactoryConfig{
+				ReloadCertificates: cfg.ReloadCertificates,
+				ConnectionUrl:      cfg.URL,
 			}
 			if cfg.URL == "" {
 				return errors.New("--url must be specified")
 			}
-			conn, err := database.DefaultFactory.New(ctx, cfg.URL)
+			conn, err := database.DefaultFactory.NewWithConfig(ctx, factoryCfg)
 			if err != nil {
 				return err
 			}
-			store := store.New(conn)
-			roConn, err := database.DefaultFactory.ReadOnly(ctx, cfg.URL)
+			dbStore := store.New(conn)
+			roConn, err := database.DefaultFactory.ReadOnlyWithConfig(ctx, factoryCfg)
 			if err != nil {
 				return err
 			}
@@ -62,7 +66,7 @@ func Command() *cobra.Command {
 
 			// Run the httpServer in a separate context, so that we can
 			// control the shutdown process.
-			httpServer, err := http.New(ctx, cfg, store, registry)
+			httpServer, err := http.New(ctx, cfg, dbStore, registry)
 			if err != nil {
 				return err
 			}
@@ -72,7 +76,7 @@ func Command() *cobra.Command {
 				return err
 			}
 
-			metricServer := metric.New(ctx, cfg, store, roConn, registry)
+			metricServer := metric.New(ctx, cfg, dbStore, roConn, registry)
 			err = metricServer.Start(ctx)
 			if err != nil {
 				return err
@@ -88,7 +92,12 @@ func Command() *cobra.Command {
 					switch s {
 					case syscall.SIGHUP:
 						log.Info("Refreshing configuration")
+						log.Debug("reset db pools")
+						conn.Reset()
+						roConn.Reset()
+						log.Debug("refresh metric server")
 						metricServer.Refresh(cmd.Context())
+						log.Debug("refresh http server")
 						httpServer.Refresh(cmd.Context())
 					}
 				}
@@ -118,5 +127,6 @@ func Command() *cobra.Command {
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	f.StringVar(&cfg.Prometheus, "prometheus", "", "prometheus endpoint")
 	f.BoolVar(&cfg.RewriteHistograms, "rewrite-histograms", false, "enable histogram rewriting")
+	f.BoolVar(&cfg.ReloadCertificates, "reload-certificates", false, "enable certificate reloading")
 	return c
 }
