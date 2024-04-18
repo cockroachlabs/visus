@@ -115,7 +115,7 @@ func (f factory) new(ctx context.Context, cfg *FactoryConfig) (Connection, error
 	}
 	if cfg.ReloadCertificates && poolConfig.ConnConfig.TLSConfig != nil {
 		loadCertFunc := func(_ *tls.CertificateRequestInfo) (*tls.Certificate, error) {
-			log.Debug("loading pool tls certificate")
+			log.Debug("loading pool certificates")
 			c, parseErr := pgxpool.ParseConfig(connectionUrl)
 			if parseErr != nil {
 				log.Error(parseErr)
@@ -124,7 +124,7 @@ func (f factory) new(ctx context.Context, cfg *FactoryConfig) (Connection, error
 			if len(c.ConnConfig.TLSConfig.Certificates) > 0 {
 				return &c.ConnConfig.TLSConfig.Certificates[0], nil
 			}
-			return nil, errors.New("tls certificate not found")
+			return nil, errors.New("pool certificate not found")
 		}
 
 		poolConfig.ConnConfig.TLSConfig.GetClientCertificate = loadCertFunc

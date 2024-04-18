@@ -92,7 +92,7 @@ func Command() *cobra.Command {
 					switch s {
 					case syscall.SIGHUP:
 						log.Info("Refreshing configuration")
-						log.Debug("reset db pools")
+						log.Debug("reset connection pools")
 						conn.Reset()
 						roConn.Reset()
 						log.Debug("refresh metric server")
