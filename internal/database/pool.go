@@ -19,9 +19,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/jackc/pgconn"
-	"github.com/jackc/pgx/v4"
-	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -44,12 +44,9 @@ type Connection interface {
 	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
 	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
 	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
-	QueryFunc(ctx context.Context, sql string, args []interface{}, scans []interface{}, f func(pgx.QueryFuncRow) error) (pgconn.CommandTag, error)
 	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
 	Begin(ctx context.Context) (pgx.Tx, error)
 	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
-	BeginFunc(ctx context.Context, f func(pgx.Tx) error) error
-	BeginTxFunc(ctx context.Context, txOptions pgx.TxOptions, f func(pgx.Tx) error) error
 }
 
 // New creates a new connection to the database.
@@ -65,7 +62,7 @@ func (f factory) ReadOnly(ctx context.Context, URL string) (Connection, error) {
 }
 
 func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, error) {
-	var conn *pgxpool.Pool
+	var pool *pgxpool.Pool
 	sleepTime := int64(5)
 	poolConfig, err := pgxpool.ParseConfig(URL)
 	if err != nil {
@@ -79,7 +76,7 @@ func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, erro
 		}
 	}
 	for {
-		conn, err = pgxpool.ConnectConfig(ctx, poolConfig)
+		pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
 		if err != nil {
 			log.Error(err)
 			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
@@ -94,7 +91,7 @@ func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, erro
 			sleepTime += int64(5)
 		}
 	}
-	return conn, nil
+	return pool, nil
 }
 
 func sleep(ctx context.Context, seconds int64) error {

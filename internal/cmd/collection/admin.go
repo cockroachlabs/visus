@@ -29,7 +29,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/creasty/defaults"
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
@@ -304,7 +304,7 @@ func putCmd(factory database.Factory) *cobra.Command {
 				Scope:     scope,
 				MaxResult: config.MaxResults,
 				Frequency: pgtype.Interval{
-					Status:       pgtype.Present,
+					Valid:        true,
 					Microseconds: int64(config.Frequency) * microsecondsPerSecond,
 				},
 				Query:   config.Query,
@@ -314,7 +314,7 @@ func putCmd(factory database.Factory) *cobra.Command {
 			store := store.New(conn)
 			err = store.PutCollection(ctx, collection)
 			if err != nil {
-				fmt.Printf("Error inserting collection %s.", config.Name)
+				fmt.Printf("Error inserting collection %s.\n", config.Name)
 				return err
 			}
 			fmt.Printf("Collection %s inserted.\n", config.Name)
