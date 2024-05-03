@@ -18,7 +18,7 @@ import (
 	"context"
 	_ "embed" // embedding sql statements
 
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 	log "github.com/sirupsen/logrus"
 )
 

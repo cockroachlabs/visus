@@ -26,7 +26,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/golang/groupcache/lru"
-	"github.com/jackc/pgtype"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 )
@@ -251,13 +251,13 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 	c.resetGauges()
 	desc := rows.FieldDescriptions()
 	if len(desc) != len(c.labels)+len(c.metrics) {
-		log.Errorf("Collect mismatch %v %d %v \n", desc, len(c.labels), c.metrics)
+		log.Errorf("%s: column mismatch %v %d %v \n", c.name, desc, len(c.labels), c.metrics)
 		return errors.New("columns returned in the query must be match labels+metrics")
 	}
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
-			log.Warnf("%s collect %s", c.name, err.Error())
+			log.Errorf("%s: unable to decode values; %s", c.name, err.Error())
 			continue
 		}
 		labels := make([]string, len(c.labels))
@@ -279,12 +279,14 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 					case int:
 						c.counterAdd(vec, metric.name, labels, float64(value))
 					case pgtype.Numeric:
-						var floatValue float64
-						value.AssignTo(&floatValue)
-						c.counterAdd(vec, metric.name, labels, floatValue)
+						if floatValue, err := value.Float64Value(); err != nil {
+							log.Errorf("%s: collect %s", c.name, err.Error())
+						} else {
+							c.counterAdd(vec, metric.name, labels, floatValue.Float64)
+						}
 					case nil:
 					default:
-						log.Errorf("%s unknown type %T for %s", c.name, v, metric.name)
+						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
 					}
 				case *prometheus.GaugeVec:
 					switch value := v.(type) {
@@ -293,16 +295,18 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 					case int:
 						c.gaugeSet(vec, metric.name, labels, float64(value))
 					case pgtype.Numeric:
-						var floatValue float64
-						value.AssignTo(&floatValue)
-						c.gaugeSet(vec, metric.name, labels, floatValue)
+						if floatValue, err := value.Float64Value(); err != nil {
+							log.Errorf("%s: collect %s", c.name, err.Error())
+						} else {
+							c.gaugeSet(vec, metric.name, labels, floatValue.Float64)
+						}
 					case nil:
 					default:
-						log.Errorf("%s unknown type %T for %s", c.name, v, metric.name)
+						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
 					}
 				}
 			} else {
-				log.Errorf("%s unknown column %s", c.name, colName)
+				log.Errorf("%s: unknown column %s", c.name, colName)
 			}
 		}
 	}
