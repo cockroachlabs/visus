@@ -43,7 +43,7 @@ type config struct {
 	Regex   string
 }
 
-func getCmd(factory database.Factory) *cobra.Command {
+func getCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "get",
 		Args:    cobra.ExactArgs(1),
@@ -51,7 +51,7 @@ func getCmd(factory database.Factory) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			name := args[0]
-			conn, err := factory.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -84,13 +84,13 @@ func getCmd(factory database.Factory) *cobra.Command {
 	return c
 }
 
-func listCmd(factory database.Factory) *cobra.Command {
+func listCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "list",
 		Example: `./visus histogram list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := factory.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -109,7 +109,7 @@ func listCmd(factory database.Factory) *cobra.Command {
 	return c
 }
 
-func deleteCmd(factory database.Factory) *cobra.Command {
+func deleteCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:     "delete",
 		Args:    cobra.ExactArgs(1),
@@ -117,7 +117,7 @@ func deleteCmd(factory database.Factory) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			regex := args[0]
-			conn, err := factory.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -134,14 +134,14 @@ func deleteCmd(factory database.Factory) *cobra.Command {
 	return c
 }
 
-func testCmd(factory database.Factory) *cobra.Command {
+func testCmd() *cobra.Command {
 	var prometheus string
 	c := &cobra.Command{
 		Use:     "test",
 		Example: `./visus histogram test --prometheus http://localhost:8080/_status/vars  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := factory.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -176,7 +176,7 @@ func testCmd(factory database.Factory) *cobra.Command {
 	return c
 }
 
-func putCmd(factory database.Factory) *cobra.Command {
+func putCmd() *cobra.Command {
 	var file string
 	c := &cobra.Command{
 		Use:     "put",
@@ -187,7 +187,7 @@ func putCmd(factory database.Factory) *cobra.Command {
 			if file == "" {
 				return errors.New("yaml configuration required")
 			}
-			conn, err := factory.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
@@ -253,11 +253,11 @@ func Command() *cobra.Command {
 
 	f := c.PersistentFlags()
 	c.AddCommand(
-		getCmd(database.DefaultFactory),
-		listCmd(database.DefaultFactory),
-		deleteCmd(database.DefaultFactory),
-		putCmd(database.DefaultFactory),
-		testCmd(database.DefaultFactory))
+		getCmd(),
+		listCmd(),
+		deleteCmd(),
+		putCmd(),
+		testCmd())
 	f.StringVar(&databaseURL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	return c
