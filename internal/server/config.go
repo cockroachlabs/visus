@@ -14,13 +14,7 @@
 
 package server
 
-import (
-	"crypto/tls"
-	"crypto/x509"
-	"net/url"
-	"os"
-	"time"
-)
+import "time"
 
 // Config encapsulates the command-line configurations and the logic
 // necessary to make those values usable.
@@ -36,27 +30,4 @@ type Config struct {
 	URL               string        // URL to connect to the database
 	ProcMetrics       bool          // Enable collections of process metrics.
 	VisusMetrics      bool          // Enable collection of visus metrics.
-}
-
-// GetTLSClientConfig returns the TLS configuration to use for outgoing http connections.
-func (c *Config) GetTLSClientConfig() (*tls.Config, error) {
-	url, err := url.Parse(c.Prometheus)
-	if err != nil {
-		return nil, err
-	}
-	if url.Scheme == "http" {
-		return nil, nil
-	}
-	var caCertPool *x509.CertPool
-	if c.CaCert != "" {
-		caCert, err := os.ReadFile(c.CaCert)
-		if err != nil {
-			return nil, err
-		}
-		caCertPool = x509.NewCertPool()
-		caCertPool.AppendCertsFromPEM(caCert)
-	}
-	return &tls.Config{
-		RootCAs: caCertPool,
-	}, nil
 }

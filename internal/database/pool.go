@@ -1,4 +1,4 @@
-// Copyright 2022 Cockroach Labs Inc.
+// Copyright 2024 Cockroach Labs Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -17,88 +17,80 @@ package database
 
 import (
 	"context"
-	"time"
+	"sync"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	log "github.com/sirupsen/logrus"
 )
 
-// Factory creates database connections
-type Factory interface {
-	//New creates a new connection to the database.
-	New(ctx context.Context, URL string) (Connection, error)
-	//ReadOnly creates a read only connection to the database.
-	ReadOnly(ctx context.Context, URL string) (Connection, error)
+// Pool provides a set of connections to the target database.
+type Pool struct {
+	readOnly bool
+	URL      string
+	mu       struct {
+		sync.RWMutex
+		pool *pgxpool.Pool
+	}
 }
 
-type factory struct {
+var _ Connection = &Pool{}
+
+// Begin implements Connection.
+func (p *Pool) Begin(ctx context.Context) (pgx.Tx, error) {
+	return p.get().Begin(ctx)
 }
 
-// DefaultFactory creates a pool of PGX connections.
-var DefaultFactory = &factory{}
-
-// Connection defines the methods to access the database.
-type Connection interface {
-	Exec(ctx context.Context, sql string, arguments ...interface{}) (pgconn.CommandTag, error)
-	Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error)
-	QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row
-	SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults
-	Begin(ctx context.Context) (pgx.Tx, error)
-	BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error)
+// BeginTx implements Connection.
+func (p *Pool) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error) {
+	return p.get().BeginTx(ctx, txOptions)
 }
 
-// New creates a new connection to the database.
-// It waits until a connection can be established, or the the context has been cancelled.
-func (f factory) New(ctx context.Context, URL string) (Connection, error) {
-	return f.new(ctx, URL, false)
+// Exec implements Connection.
+func (p *Pool) Exec(
+	ctx context.Context, sql string, args ...interface{},
+) (pgconn.CommandTag, error) {
+	return p.get().Exec(ctx, sql, args...)
 }
 
-// ReadOnly creates a new connection to the database with follower reads
-// It waits until a connection can be established, or the the context has been cancelled.
-func (f factory) ReadOnly(ctx context.Context, URL string) (Connection, error) {
-	return f.new(ctx, URL, true)
+// Query implements Connection.
+func (p *Pool) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	return p.get().Query(ctx, sql, args...)
 }
 
-func (f factory) new(ctx context.Context, URL string, ro bool) (Connection, error) {
+// QueryRow implements Connection.
+func (p *Pool) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	return p.get().QueryRow(ctx, sql, args...)
+}
+
+// Refresh creates a new pool, and reloads the certificates, if applicable.
+// It is typically called when the process receives a SIGHUP.
+func (p *Pool) Refresh(ctx context.Context) error {
 	var pool *pgxpool.Pool
-	sleepTime := int64(5)
-	poolConfig, err := pgxpool.ParseConfig(URL)
-	if err != nil {
-		log.Fatal(err)
+	var err error
+	// We don't lock the pool until we get the new one.
+	// Existing clients may still use the current pool.
+	if pool, err = pgxPool(ctx, p.URL, p.readOnly); err != nil {
+		return err
 	}
-	if ro {
-		poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-			log.Debug("setting up a read only session")
-			_, err := conn.Exec(ctx, "set session default_transaction_use_follower_reads = true;")
-			return err
-		}
-	}
-	for {
-		pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
-		if err != nil {
-			log.Error(err)
-			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
-			err := sleep(ctx, sleepTime)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			break
-		}
-		if sleepTime < int64(60) {
-			sleepTime += int64(5)
-		}
-	}
-	return pool, nil
+	p.mu.Lock()
+	old := p.mu.pool
+	p.mu.pool = pool
+	p.mu.Unlock()
+	// Close the old pool
+	old.Close()
+	return nil
+
 }
 
-func sleep(ctx context.Context, seconds int64) error {
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-time.After(time.Duration(seconds) * time.Second):
-		return nil
-	}
+// SendBatch implements Connection.
+func (p *Pool) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
+	return p.get().SendBatch(ctx, b)
+}
+
+// get returns the underlying pgxpool.Pool
+func (p *Pool) get() *pgxpool.Pool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.mu.pool
 }

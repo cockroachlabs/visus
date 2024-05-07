@@ -17,7 +17,9 @@ package http
 
 import (
 	"context"
+	"crypto/tls"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/NYTimes/gziphandler"
@@ -31,33 +33,64 @@ import (
 )
 
 type serverImpl struct {
-	config      *server.Config
-	httpServer  *http.Server
-	translators []translator.Translator
-	store       store.Store
-	scheduler   *gocron.Scheduler
-	registry    *prometheus.Registry
+	clientTLSConfig *clientTLSConfig
+	config          *server.Config
+	httpServer      *http.Server
+	keyPair         *keyPair
+	translators     []translator.Translator
+	store           store.Store
+	scheduler       *gocron.Scheduler
+	registry        *prometheus.Registry
 }
 
 // New constructs a http server to server the metrics
 func New(
 	ctx context.Context, cfg *server.Config, st store.Store, registry *prometheus.Registry,
 ) (server.Server, error) {
-	httpServer := &http.Server{
-		Addr: cfg.BindAddr,
+	tlsConfig := &tls.Config{}
+	keyPair := &keyPair{}
+	clientTLS := &clientTLSConfig{}
+	if cfg.BindCert != "" && cfg.BindKey != "" {
+		keyPair.certPath = cfg.BindCert
+		keyPair.keyPath = cfg.BindKey
+		keyPair.load()
+		tlsConfig.GetCertificate = keyPair.getCertificateFunc()
 	}
-	server := &serverImpl{
-		config:      cfg,
+	if cfg.CaCert != "" {
+		url, err := url.Parse(cfg.Prometheus)
+		if err != nil {
+			return nil, err
+		}
+		if url.Scheme == "https" {
+			clientTLS.caPath = cfg.CaCert
+			err := clientTLS.load()
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &serverImpl{
+		clientTLSConfig: clientTLS,
+		config:          cfg,
+		httpServer: &http.Server{
+			Addr:      cfg.BindAddr,
+			TLSConfig: tlsConfig,
+		},
+		keyPair:     keyPair,
 		translators: make([]translator.Translator, 0),
-		httpServer:  httpServer,
 		store:       st,
 		scheduler:   gocron.NewScheduler(time.UTC),
 		registry:    registry,
-	}
-	return server, nil
+	}, nil
 }
 
 func (s *serverImpl) Refresh(ctx context.Context) error {
+	if err := s.keyPair.load(); err != nil {
+		return err
+	}
+	if err := s.clientTLSConfig.load(); err != nil {
+		return err
+	}
 	if !s.config.RewriteHistograms {
 		return nil
 	}
@@ -92,11 +125,7 @@ func (s *serverImpl) Start(ctx context.Context) error {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		if s.config.Prometheus != "" {
-			tlsConfig, err := s.config.GetTLSClientConfig()
-			if err != nil {
-				s.errorResponse(w, "Error setting up secure connection", err)
-				return
-			}
+			tlsConfig := s.clientTLSConfig.get()
 			metricsIn, err := ReadMetrics(ctx, s.config.Prometheus, tlsConfig)
 			if err != nil {
 				log.Error(err)
@@ -122,7 +151,7 @@ func (s *serverImpl) Start(ctx context.Context) error {
 		var err error
 		if !s.config.Insecure {
 			log.Infof("Starting secure server: %v", s.config.BindAddr)
-			err = s.httpServer.ListenAndServeTLS(s.config.BindCert, s.config.BindKey)
+			err = s.httpServer.ListenAndServeTLS("", "")
 		} else {
 			log.Infof("Starting server: %v", s.config.BindAddr)
 			err = s.httpServer.ListenAndServe()

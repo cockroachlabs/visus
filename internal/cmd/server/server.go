@@ -48,12 +48,12 @@ func Command() *cobra.Command {
 			if cfg.URL == "" {
 				return errors.New("--url must be specified")
 			}
-			conn, err := database.DefaultFactory.New(ctx, cfg.URL)
+			conn, err := database.New(ctx, cfg.URL)
 			if err != nil {
 				return err
 			}
 			store := store.New(conn)
-			roConn, err := database.DefaultFactory.ReadOnly(ctx, cfg.URL)
+			roConn, err := database.ReadOnly(ctx, cfg.URL)
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,7 @@ func Command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer metricServer.Shutdown(cmd.Context())
+			defer metricServer.Shutdown(ctx)
 
 			signalChan := make(chan os.Signal, 1)
 			signal.Notify(signalChan, syscall.SIGHUP)
@@ -88,14 +88,16 @@ func Command() *cobra.Command {
 					switch s {
 					case syscall.SIGHUP:
 						log.Info("Refreshing configuration")
-						metricServer.Refresh(cmd.Context())
-						httpServer.Refresh(cmd.Context())
+						metricServer.Refresh(ctx)
+						httpServer.Refresh(ctx)
+						roConn.Refresh(ctx)
+						conn.Refresh(ctx)
 					}
 				}
 			}()
 
 			// Wait to be shut down.
-			<-cmd.Context().Done()
+			<-ctx.Done()
 			return nil
 		},
 	}
