@@ -34,7 +34,7 @@ func Command() *cobra.Command {
 		Example: `./visus init  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := database.DefaultFactory.New(ctx, databaseURL)
+			conn, err := database.New(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
