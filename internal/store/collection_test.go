@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package store manages collector configurations in the database.
 package store
 
 import (
@@ -31,7 +30,8 @@ func TestGetCollectionNames(t *testing.T) {
 	mock, err := pgxmock.NewConn()
 	require.NoError(t, err)
 	store := New(mock)
-	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 	columns := []string{"name"}
 	tests := [][]string{
 		{},
@@ -55,19 +55,22 @@ func TestDeleteCollection(t *testing.T) {
 	mock, err := pgxmock.NewConn()
 	require.NoError(t, err)
 	store := New(mock)
-	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 	mock.ExpectBegin()
 	mock.ExpectExec("delete from _visus.metric where collection = .+").WithArgs("test").
 		WillReturnResult(pgxmock.NewResult("DELETE", 0))
 	mock.ExpectExec("delete from _visus.collection where name = .+").WithArgs("test").
 		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	mock.ExpectCommit()
 	err = store.DeleteCollection(ctx, "test")
 	require.NoError(t, err)
 }
 
 // TestGetCollection verifies the GetCollection and, indirectly, the GetMetrics functions.
 func TestGetCollection(t *testing.T) {
-	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 	type test struct {
 		name       string
 		collection *Collection
@@ -135,7 +138,8 @@ func TestGetCollection(t *testing.T) {
 }
 
 func TestPutCollection(t *testing.T) {
-	ctx, _ := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
 	type test struct {
 		name       string
 		collection *Collection
@@ -187,6 +191,7 @@ func TestPutCollection(t *testing.T) {
 				WithArgs(tt.collection.Name, metric.Name, metric.Kind, metric.Help).
 				WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		}
+		mock.ExpectCommit()
 		err = store.PutCollection(ctx, tt.collection)
 		require.NoError(t, err)
 		mock.Close(ctx)

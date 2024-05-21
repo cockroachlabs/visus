@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package store manages configurations in the database.
 package store
 
 import (
@@ -21,7 +20,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -94,38 +95,35 @@ func (s *store) DeleteCollection(ctx context.Context, name string) error {
 		log.Debugln(err)
 		return err
 	}
-	defer txn.Commit(ctx)
+	defer func() {
+		if err := txn.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Errorf("rollback failed %s", err)
+		}
+	}()
 	_, err = txn.Exec(ctx, deleteMetricsStmt, name)
 	if err != nil {
-		log.Errorf("delete metrics error:%s", err)
-		txn.Rollback(ctx)
-		return err
+		return errors.WithStack(err)
 	}
 	_, err = txn.Exec(ctx, deleteCollectionStmt, name)
 	if err != nil {
-		log.Errorf("delete metrics error:%s", err)
-		txn.Rollback(ctx)
-		return err
+		return errors.WithStack(err)
 	}
-	return nil
+	return txn.Commit(ctx)
 }
 
 // GetCollectionNames retrieves all the collection names stored in the database.
 func (s *store) GetCollectionNames(ctx context.Context) ([]string, error) {
 	rows, err := s.conn.Query(ctx, listCollectionsStmt)
 	if err != nil {
-		log.Errorf("GetCollectionNames %s ", err.Error())
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	defer rows.Close()
 	res := make([]string, 0)
-
 	for rows.Next() {
 		var name string
 		err := rows.Scan(&name)
 		if err != nil {
-			log.Debugln(err)
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		res = append(res, name)
 	}
@@ -135,30 +133,22 @@ func (s *store) GetCollectionNames(ctx context.Context) ([]string, error) {
 // GetCollection retrieves the collection configuration from the database
 func (s *store) GetCollection(ctx context.Context, name string) (*Collection, error) {
 	collection := &Collection{}
-	collRows, err := s.conn.Query(ctx, getCollectionStmt, name)
+	collRow := s.conn.QueryRow(ctx, getCollectionStmt, name)
+	if err := collRow.Scan(
+		&collection.Name, &collection.LastModified,
+		&collection.Enabled, &collection.Scope, &collection.MaxResult,
+		&collection.Frequency, &collection.Query, &collection.Labels); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, errors.WithStack(err)
+	}
+	metrics, err := s.GetMetrics(ctx, name)
 	if err != nil {
-		log.Errorf("GetCollection %s ", err.Error())
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
-	defer collRows.Close()
-	if collRows.Next() {
-		err := collRows.Scan(
-			&collection.Name, &collection.LastModified,
-			&collection.Enabled, &collection.Scope, &collection.MaxResult,
-			&collection.Frequency, &collection.Query, &collection.Labels)
-		if err != nil {
-			log.Debugln(err)
-			return nil, err
-		}
-		metrics, err := s.GetMetrics(ctx, name)
-		if err != nil {
-			log.Debugln(err)
-			return nil, err
-		}
-		collection.Metrics = metrics
-		return collection, nil
-	}
-	return nil, nil
+	collection.Metrics = metrics
+	return collection, nil
 }
 
 // GetMetrics retrieves the configuration for the metrics associated to this collection.
@@ -166,16 +156,14 @@ func (s *store) GetMetrics(ctx context.Context, name string) ([]Metric, error) {
 	metrics := make([]Metric, 0)
 	rows, err := s.conn.Query(ctx, getMetricsStmt, name)
 	if err != nil {
-		log.Errorf("GetMetrics %s ", err.Error())
-		return nil, err
+		return nil, errors.WithStack(err)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		metric := Metric{}
 		err := rows.Scan(&metric.Name, &metric.Kind, &metric.Help)
 		if err != nil {
-			log.Debugln(err)
-			return nil, err
+			return nil, errors.WithStack(err)
 		}
 		metrics = append(metrics, metric)
 	}
@@ -185,43 +173,37 @@ func (s *store) GetMetrics(ctx context.Context, name string) ([]Metric, error) {
 // PutCollection adds a new collection configuration to the database.
 // If a collection with the same name already exists, it is replaced.
 func (s *store) PutCollection(ctx context.Context, collection *Collection) error {
-	log.Debugf("%+v", collection)
 	txn, err := s.conn.Begin(ctx)
 	if err != nil {
-		log.Debugln(err)
-		return err
+		return errors.WithStack(err)
 	}
-	defer txn.Commit(ctx)
+	defer func() {
+		if err := txn.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			log.Errorf("rollback failed %s", err)
+		}
+	}()
 	_, err = txn.Exec(ctx, deleteMetricsStmt, collection.Name)
 	if err != nil {
-		log.Errorf("delete metrics error:%s", err)
-		txn.Rollback(ctx)
-		return err
+		return errors.WithStack(err)
 	}
 	_, err = txn.Exec(ctx, upsertCollectionStmt,
 		collection.Name, collection.Enabled, collection.Scope, collection.MaxResult,
 		collection.Frequency, collection.Query, collection.Labels)
 	if err != nil {
-		log.Info(collection.Frequency)
-		log.Errorf("upsert collection error:%s, %s", upsertCollectionStmt, err)
-		txn.Rollback(ctx)
-		return err
+		return errors.WithStack(err)
 	}
 	for _, metric := range collection.Metrics {
 		_, err = txn.Exec(ctx, insertMetricStmt, collection.Name, metric.Name,
 			metric.Kind, metric.Help)
 		if err != nil {
-			log.Errorf("insert metric error:%s", err)
-			txn.Rollback(ctx)
-			return err
+			return errors.WithStack(err)
 		}
 	}
-	return nil
+	return txn.Commit(ctx)
 }
 
 // String implements fmt.Stringer
 func (c *Collection) String() string {
-
 	return fmt.Sprintf(`Collection: %s
 Enabled:    %t
 Updated:    %s
