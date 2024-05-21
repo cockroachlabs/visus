@@ -16,18 +16,18 @@ package server
 
 import "time"
 
-// Config encapsulates the command-line configurations and the logic
-// necessary to make those values usable.
+// Config encapsulates the command-line parameters that can be supplied
+// to configure the behavior of Visus.
 type Config struct {
 	BindAddr          string        // Address to bind the server to.
 	BindCert, BindKey string        // Paths to Certificate and Key.
 	CaCert            string        // Path to the Root CA.
 	Endpoint          string        // Endpoint for metrics
-	RewriteHistograms bool          // Enable histogram rewriting
 	Insecure          bool          // Sanity check to ensure that the operator really means it.
+	ProcMetrics       bool          // Enable collections of process metrics.
 	Prometheus        string        // URL for the node prometheus endpoint
 	Refresh           time.Duration // how often to refresh the configuration.
+	RewriteHistograms bool          // Enable histogram rewriting
 	URL               string        // URL to connect to the database
-	ProcMetrics       bool          // Enable collections of process metrics.
-	VisusMetrics      bool          // Enable collection of visus metrics.
+	VisusMetrics      bool          // Enable collection of Visus metrics.
 }

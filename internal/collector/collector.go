@@ -105,8 +105,8 @@ type cacheKey struct {
 
 type cacheValue struct {
 	labels []string
-	vec    cacheGC
 	value  float64
+	vec    cacheGC
 }
 
 // New creates a collector with the given name.
@@ -122,37 +122,35 @@ func New(name string, labels []string, query string) Collector {
 	}
 	return &collector{
 		enabled:    true,
-		name:       name,
-		labels:     labels,
-		labelMap:   labelMap,
-		metrics:    make(map[string]metric),
-		query:      query,
 		first:      true,
 		frequency:  10,
+		labelMap:   labelMap,
+		labels:     labels,
 		maxResults: 100,
+		metrics:    make(map[string]metric),
+		name:       name,
+		query:      query,
 		registerer: prometheus.DefaultRegisterer,
 	}
 }
 
 // FromCollection creates a collector from a collection configuration stored in the database.
-func FromCollection(
-	coll *store.Collection, conn database.Connection, registerer prometheus.Registerer,
-) (Collector, error) {
+func FromCollection(coll *store.Collection, registerer prometheus.Registerer) (Collector, error) {
 	labelMap := make(map[string]int)
 	for i, l := range coll.Labels {
 		labelMap[l] = i
 	}
 	res := &collector{
 		enabled:      true,
-		name:         coll.Name,
-		labels:       coll.Labels,
-		labelMap:     labelMap,
-		lastModified: coll.LastModified.Time,
-		metrics:      make(map[string]metric),
-		query:        coll.Query,
 		first:        true,
 		frequency:    int(coll.Frequency.Microseconds / (1000 * 1000)),
+		labelMap:     labelMap,
+		labels:       coll.Labels,
+		lastModified: coll.LastModified.Time,
 		maxResults:   coll.MaxResult,
+		metrics:      make(map[string]metric),
+		name:         coll.Name,
+		query:        coll.Query,
 		registerer:   registerer,
 	}
 	for _, m := range coll.Metrics {
@@ -178,8 +176,8 @@ func (c *collector) AddCounter(name string, help string) error {
 	metricName := c.name + "_" + name
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: metricName,
 			Help: help,
+			Name: metricName,
 		},
 		c.labels,
 	)
@@ -187,7 +185,7 @@ func (c *collector) AddCounter(name string, help string) error {
 	if err := c.registerer.Register(vec); err != nil {
 		return err
 	}
-	log.Debugf("registering counter %s", metricName)
+	log.Tracef("registering counter %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,
@@ -214,7 +212,7 @@ func (c *collector) AddGauge(name string, help string) error {
 		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
 		return err
 	}
-	log.Debugf("registering gauge %s", metricName)
+	log.Tracef("registering gauge %s", metricName)
 	c.metrics[name] =
 		metric{
 			help: help,
@@ -372,7 +370,7 @@ func (c *collector) counterAdd(
 		delta = value
 	}
 	vec.WithLabelValues(labels...).Add(delta)
-	c.metricsCache.Add(key, cacheValue{labels, vec, value})
+	c.metricsCache.Add(key, cacheValue{labels, value, vec})
 }
 
 // gaugeSet sets a gauge value.
@@ -384,7 +382,7 @@ func (c *collector) gaugeSet(
 		return
 	}
 	vec.WithLabelValues(labels...).Set(value)
-	c.metricsCache.Add(key, cacheValue{labels, vec, value})
+	c.metricsCache.Add(key, cacheValue{labels, value, vec})
 }
 
 func (c *collector) getKey(name string, labels []string) (string, error) {

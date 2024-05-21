@@ -153,7 +153,7 @@ func (m *metricsServer) Refresh(ctx context.Context) error {
 			log.Debugf("Already scheduled %s, removing", coll.Name)
 			m.scheduler.RemoveByReference(existing.job)
 		}
-		collctr, err := collector.FromCollection(coll, m.conn, m.registry)
+		collctr, err := collector.FromCollection(coll, m.registry)
 		if err != nil {
 			log.Errorf("Error scheduling collector %s: %s", name, err.Error())
 			continue
