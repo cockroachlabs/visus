@@ -25,6 +25,7 @@ type Memory struct {
 	MainNode    bool
 	collections *sync.Map
 	histograms  *sync.Map
+	scans       *sync.Map
 }
 
 var _ Store = &Memory{}
@@ -38,6 +39,12 @@ func (m *Memory) DeleteCollection(_ context.Context, name string) error {
 // DeleteHistogram implements store.Store.
 func (m *Memory) DeleteHistogram(_ context.Context, name string) error {
 	m.histograms.Delete(name)
+	return nil
+}
+
+// DeleteScan implements store.Store.
+func (m *Memory) DeleteScan(_ context.Context, name string) error {
+	m.scans.Delete(name)
 	return nil
 }
 
@@ -69,10 +76,28 @@ func (m *Memory) GetMetrics(ctx context.Context, name string) ([]Metric, error) 
 	return coll.Metrics, nil
 }
 
+// GetScan implements store.Store.
+func (m *Memory) GetScan(_ context.Context, name string) (*Scan, error) {
+	res, _ := m.scans.Load(name)
+	return res.(*Scan), nil
+}
+
+// GetScanNames implements store.Store.
+func (m *Memory) GetScanNames(_ context.Context) ([]string, error) {
+	return getNames(m.scans)
+}
+
+// GetScanPatterns implements store.Store.
+func (m *Memory) GetScanPatterns(ctx context.Context, name string) ([]Pattern, error) {
+	scan, _ := m.GetScan(ctx, name)
+	return scan.Patterns, nil
+}
+
 // Init implements store.Store.
 func (m *Memory) Init(_ context.Context) error {
 	m.collections = &sync.Map{}
 	m.histograms = &sync.Map{}
+	m.scans = &sync.Map{}
 	return nil
 }
 
@@ -90,6 +115,12 @@ func (m *Memory) PutCollection(_ context.Context, collection *Collection) error 
 // PutHistogram implements store.Store.
 func (m *Memory) PutHistogram(_ context.Context, histogram *Histogram) error {
 	m.histograms.Store(histogram.Name, histogram)
+	return nil
+}
+
+// PutScan implements store.Store.
+func (m *Memory) PutScan(_ context.Context, scan *Scan) error {
+	m.scans.Store(scan.Name, scan)
 	return nil
 }
 

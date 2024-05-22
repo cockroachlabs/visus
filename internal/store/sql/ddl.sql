@@ -54,3 +54,24 @@ GRANT SELECT,INSERT,UPDATE ON TABLE _visus.node TO visus;
 GRANT SELECT ON TABLE _visus.collection TO visus;
 GRANT SELECT ON TABLE _visus.metric TO visus;
 GRANT SELECT ON TABLE _visus.histogram TO visus;
+
+
+CREATE TABLE IF NOT EXISTS _visus.scan (
+    name         STRING NOT NULL,
+    path         STRING NOT NULL,
+    format       STRING NOT NULL,
+    updated      timestamptz DEFAULT current_timestamp (),
+    enabled      BOOL DEFAULT true,
+    PRIMARY KEY (name)
+);
+
+CREATE TABLE IF NOT EXISTS _visus.pattern (
+    scan         STRING NOT NULL,
+    metric       STRING NOT NULL,
+    help         STRING NOT NULL,
+    regex        STRING NOT NULL,
+    PRIMARY KEY (scan, metric)
+);
+
+GRANT SELECT ON TABLE _visus.scan TO visus;
+GRANT SELECT ON TABLE _visus.pattern TO visus;

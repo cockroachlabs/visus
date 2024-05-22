@@ -23,12 +23,14 @@ import (
 	"github.com/cockroachlabs/visus/internal/database"
 )
 
-// Store provides the CRUD function to manage collection and histogram configurations.
+// Store provides the CRUD function to manage collection, histogram and scanner configurations.
 type Store interface {
 	// DeleteCollection deletes the collection with the given name from the store.
 	DeleteCollection(ctx context.Context, name string) error
 	// DeleteHistogram deletes the histogram with the given name from the store.
 	DeleteHistogram(ctx context.Context, regex string) error
+	// DeleteScan deletes the log target with the given name from the store.
+	DeleteScan(ctx context.Context, name string) error
 	// GetCollection returns the collection with the given name.
 	GetCollection(ctx context.Context, name string) (*Collection, error)
 	// GetCollectionNames returns the collection names present in the store.
@@ -39,6 +41,12 @@ type Store interface {
 	GetHistogramNames(ctx context.Context) ([]string, error)
 	// GetMetrics returns the metrics associated to a collection.
 	GetMetrics(ctx context.Context, name string) ([]Metric, error)
+	// GetScan returns the log target with the given name.
+	GetScan(ctx context.Context, name string) (*Scan, error)
+	// GetScanNames returns the log target names present in the store.
+	GetScanNames(ctx context.Context) ([]string, error)
+	// GetScanPatterns returns the patterns associated to a log target.
+	GetScanPatterns(ctx context.Context, name string) ([]Pattern, error)
 	// Init initializes the schema in the database
 	Init(ctx context.Context) error
 	// IsMainNode returns true if the current node is the main node.
@@ -48,6 +56,8 @@ type Store interface {
 	PutCollection(ctx context.Context, collection *Collection) error
 	// PutHistogram adds a histogram configuration to the database.
 	PutHistogram(ctx context.Context, histogram *Histogram) error
+	// PutScan adds a log target configuration to the database.
+	PutScan(ctx context.Context, scan *Scan) error
 }
 
 type store struct {
