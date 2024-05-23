@@ -94,31 +94,11 @@ func New(
 // Refresh implements server.Server
 func (s *serverImpl) Refresh(ctx *stopper.Context) error {
 	log.Info("Refreshing http server configuration")
-	if err := s.keyPair.load(); err != nil {
-		return err
-	}
-	if err := s.clientTLSConfig.load(); err != nil {
-		return err
-	}
-	if !s.config.RewriteHistograms {
-		return nil
-	}
-	names, err := s.store.GetHistogramNames(ctx)
+	err := s.refresh(ctx)
 	if err != nil {
-		return err
+		server.RefreshErrors.WithLabelValues("http_server").Inc()
 	}
-	s.translators = nil
-	for _, name := range names {
-		histogram, err := s.store.GetHistogram(ctx, name)
-		if err != nil {
-			return err
-		}
-		hnew, err := translator.New(*histogram)
-		if err != nil {
-			continue
-		}
-		s.translators = append(s.translators, hnew)
-	}
+	server.RefreshCounts.WithLabelValues("http_server").Inc()
 	return nil
 }
 
@@ -197,4 +177,34 @@ func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error)
 	if newErr != nil {
 		log.Errorf("Error sending response to client %s", err)
 	}
+}
+
+// refresh the server configuration
+func (s *serverImpl) refresh(ctx *stopper.Context) error {
+	if err := s.keyPair.load(); err != nil {
+		return err
+	}
+	if err := s.clientTLSConfig.load(); err != nil {
+		return err
+	}
+	if !s.config.RewriteHistograms {
+		return nil
+	}
+	names, err := s.store.GetHistogramNames(ctx)
+	if err != nil {
+		return err
+	}
+	s.translators = nil
+	for _, name := range names {
+		histogram, err := s.store.GetHistogram(ctx, name)
+		if err != nil {
+			return err
+		}
+		hnew, err := translator.New(*histogram)
+		if err != nil {
+			continue
+		}
+		s.translators = append(s.translators, hnew)
+	}
+	return nil
 }

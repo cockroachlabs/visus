@@ -15,7 +15,32 @@
 // Package server manages access to a resource
 package server
 
-import "github.com/cockroachlabs/visus/internal/stopper"
+import (
+	"github.com/cockroachlabs/visus/internal/stopper"
+	"github.com/prometheus/client_golang/prometheus"
+)
+
+// Common server metrics.
+var (
+	labels = []string{"server"}
+	// RefreshCounts tracks the number of times Refresh are called for a server.
+	RefreshCounts = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "visus_refresh_counts",
+			Help: "number of times refresh was executed",
+		},
+		labels,
+	)
+	// RefreshErrors tracks the number of times Refresh failed for a server.
+	RefreshErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "visus_refresh_errors",
+			Help: "number of times refresh failed",
+		},
+		labels,
+	)
+	collectors = []prometheus.Collector{RefreshCounts, RefreshErrors}
+)
 
 // The Server interface manages the lifecycle of a process that controls access to a resource.
 // Its configuration can be refreshed.
@@ -23,4 +48,15 @@ import "github.com/cockroachlabs/visus/internal/stopper"
 type Server interface {
 	Start(ctx *stopper.Context) error
 	Refresh(ctx *stopper.Context) error
+}
+
+// RegisterMetrics register the server metrics to the named Prometheus registry.
+func RegisterMetrics(registry *prometheus.Registry) error {
+	for _, coll := range collectors {
+		err := registry.Register(coll)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

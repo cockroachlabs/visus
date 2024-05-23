@@ -63,6 +63,9 @@ func Command() *cobra.Command {
 			}
 			// Set up Prometheus registry.
 			registry := prometheus.NewRegistry()
+			if err := server.RegisterMetrics(registry); err != nil {
+				return err
+			}
 
 			// Start the scheduler.
 			scheduler := gocron.NewScheduler(time.UTC)
@@ -84,8 +87,10 @@ func Command() *cobra.Command {
 			}
 
 			// Start the SQL metrics collector.
-			metricServer := metric.New(cfg, store, roConn, registry, scheduler)
-
+			metricServer, err := metric.New(cfg, store, roConn, registry, scheduler)
+			if err != nil {
+				return err
+			}
 			if err := metricServer.Start(ctx); err != nil {
 				return err
 			}
