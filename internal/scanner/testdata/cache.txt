@@ -1,0 +1,3 @@
+# HELP crdb_cache cache events
+# TYPE crdb_cache counter
+crdb_cache{level="I",source="server/config.go"} 1
