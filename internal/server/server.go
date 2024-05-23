@@ -12,17 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package server implements an http server to export metrics in Prometheus format.
+// Package server manages access to a resource
 package server
 
-import "context"
+import "github.com/cockroachlabs/visus/internal/stopper"
 
-// A Server is a process that can be started and shutdown.
+// The Server interface manages the lifecycle of a process that control access to a resource.
+// Its configuration can be refreshed.
+// It uses the stopper interface to manage graceful shutdown.
 type Server interface {
-	// Refresh the server configuration
-	Refresh(ctx context.Context) error
-	// Start the server
-	Start(ctx context.Context) error
-	// Shutdown the server, releasing all the resources associated with it.
-	Shutdown(ctx context.Context) error
+	Start(ctx *stopper.Context) error
+	Refresh(ctx *stopper.Context) error
 }
