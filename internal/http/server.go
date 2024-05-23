@@ -19,11 +19,12 @@ import (
 	"context"
 	"crypto/tls"
 	"net/http"
+	_ "net/http/pprof" // enabling debugging
 	"net/url"
-	"time"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/cockroachlabs/visus/internal/server"
+	"github.com/cockroachlabs/visus/internal/stopper"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
 	"github.com/go-co-op/gocron"
@@ -37,15 +38,21 @@ type serverImpl struct {
 	config          *server.Config
 	httpServer      *http.Server
 	keyPair         *keyPair
-	translators     []translator.Translator
-	store           store.Store
-	scheduler       *gocron.Scheduler
 	registry        *prometheus.Registry
+	scheduler       *gocron.Scheduler
+	store           store.Store
+	translators     []translator.Translator
 }
+
+var _ server.Server = &serverImpl{}
 
 // New constructs a http server to server the metrics
 func New(
-	ctx context.Context, cfg *server.Config, st store.Store, registry *prometheus.Registry,
+	ctx context.Context,
+	cfg *server.Config,
+	st store.Store,
+	registry *prometheus.Registry,
+	scheduler *gocron.Scheduler,
 ) (server.Server, error) {
 	tlsConfig := &tls.Config{}
 	keyPair := &keyPair{}
@@ -77,51 +84,36 @@ func New(
 			TLSConfig: tlsConfig,
 		},
 		keyPair:     keyPair,
-		translators: make([]translator.Translator, 0),
-		store:       st,
-		scheduler:   gocron.NewScheduler(time.UTC),
 		registry:    registry,
+		scheduler:   scheduler,
+		store:       st,
+		translators: make([]translator.Translator, 0),
 	}, nil
 }
 
-func (s *serverImpl) Refresh(ctx context.Context) error {
-	if err := s.keyPair.load(); err != nil {
-		return err
-	}
-	if err := s.clientTLSConfig.load(); err != nil {
-		return err
-	}
-	if !s.config.RewriteHistograms {
-		return nil
-	}
-	names, err := s.store.GetHistogramNames(ctx)
+// Refresh implements server.Server
+func (s *serverImpl) Refresh(ctx *stopper.Context) error {
+	log.Info("Refreshing http server configuration")
+	err := s.refresh(ctx)
 	if err != nil {
-		return err
+		server.RefreshErrors.WithLabelValues("http_server").Inc()
 	}
-	s.translators = nil
-	for _, name := range names {
-		histogram, err := s.store.GetHistogram(ctx, name)
-		if err != nil {
-			return err
-		}
-		hnew, err := translator.New(*histogram)
-		if err != nil {
-			log.Errorf("Error translating histograms %s", err)
-			continue
-		}
-		s.translators = append(s.translators, hnew)
-	}
+	server.RefreshCounts.WithLabelValues("http_server").Inc()
 	return nil
 }
 
-// Start the server and wait for new connections.
-// It uses the default prometheus handler to return the metric value to the caller.
-func (s *serverImpl) Start(ctx context.Context) error {
-	s.scheduler.Every(s.config.Refresh).
+// Start implements server.Server
+func (s *serverImpl) Start(ctx *stopper.Context) error {
+	_, err := s.scheduler.Every(s.config.Refresh).
 		Do(func() {
-			s.Refresh(ctx)
+			err := s.Refresh(ctx)
+			if err != nil {
+				log.Errorf("Error refreshing http server %s", err.Error())
+			}
 		})
-	s.scheduler.StartAsync()
+	if err != nil {
+		return err
+	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 		if s.config.Prometheus != "" {
@@ -147,7 +139,8 @@ func (s *serverImpl) Start(ctx context.Context) error {
 	})
 
 	http.Handle(s.config.Endpoint, gziphandler.GzipHandler(handler))
-	go func() {
+
+	ctx.Go(func() error {
 		var err error
 		if !s.config.Insecure {
 			log.Infof("Starting secure server: %v", s.config.BindAddr)
@@ -157,19 +150,24 @@ func (s *serverImpl) Start(ctx context.Context) error {
 			// Server's TLSConfig.Certificates nor TLSConfig.GetCertificate are populated
 			err = s.httpServer.ListenAndServeTLS("", "")
 		} else {
-			log.Infof("Starting server: %v", s.config.BindAddr)
+			log.Infof("Http server started: %v", s.config.BindAddr)
 			err = s.httpServer.ListenAndServe()
 		}
 		if err != http.ErrServerClosed {
-			log.Fatal("Error starting server: ", err)
+			log.Errorf("Error starting server: %s", err)
 		}
-	}()
+		return nil
+	})
+	ctx.Go(func() error {
+		<-ctx.Stopping()
+		if err := s.httpServer.Shutdown(ctx); err != nil {
+			log.WithError(err).Error("did not shut down cleanly")
+		} else {
+			log.Info("Http server stopped")
+		}
+		return nil
+	})
 	return nil
-}
-
-func (s *serverImpl) Shutdown(ctx context.Context) error {
-	log.Info("Shutting down ")
-	return s.httpServer.Shutdown(ctx)
 }
 
 func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error) {
@@ -179,4 +177,34 @@ func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error)
 	if newErr != nil {
 		log.Errorf("Error sending response to client %s", err)
 	}
+}
+
+// refresh the server configuration
+func (s *serverImpl) refresh(ctx *stopper.Context) error {
+	if err := s.keyPair.load(); err != nil {
+		return err
+	}
+	if err := s.clientTLSConfig.load(); err != nil {
+		return err
+	}
+	if !s.config.RewriteHistograms {
+		return nil
+	}
+	names, err := s.store.GetHistogramNames(ctx)
+	if err != nil {
+		return err
+	}
+	s.translators = nil
+	for _, name := range names {
+		histogram, err := s.store.GetHistogram(ctx, name)
+		if err != nil {
+			return err
+		}
+		hnew, err := translator.New(*histogram)
+		if err != nil {
+			continue
+		}
+		s.translators = append(s.translators, hnew)
+	}
+	return nil
 }
