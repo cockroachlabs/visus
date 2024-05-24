@@ -130,13 +130,6 @@ func (s *Scanner) Stop() error {
 	return t.Stop()
 }
 
-// Stopped returns true if the scanner is done.
-func (s *Scanner) Stopped() bool {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.mu.tail == nil
-}
-
 // addCounter adds a metric counter to the Prometheus registry.
 // The counter track the number of lines matching the pattern.
 func (s *Scanner) addCounter(pattern store.Pattern) error {
@@ -188,4 +181,11 @@ func (s *Scanner) scan() (*tail.Tail, error) {
 			Poll:     s.config.Poll,
 		})
 	return s.mu.tail, err
+}
+
+// stopped returns true if the scanner is done.
+func (s *Scanner) stopped() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mu.tail == nil
 }

@@ -25,6 +25,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/http"
 	"github.com/cockroachlabs/visus/internal/metric"
+	"github.com/cockroachlabs/visus/internal/scanner"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/stopper"
 	"github.com/cockroachlabs/visus/internal/store"
@@ -95,6 +96,12 @@ func Command() *cobra.Command {
 				return err
 			}
 
+			// Start the server that manages the log scanners.
+			scannerServer := scanner.New(cfg, store, registry, scheduler)
+			if err := scannerServer.Start(ctx); err != nil {
+				return err
+			}
+
 			// Trap SIGHUP to force configuration reload.
 			sigHup := make(chan os.Signal, 1)
 			signal.Notify(sigHup, syscall.SIGHUP)
@@ -113,6 +120,9 @@ func Command() *cobra.Command {
 						log.Info("Refreshing configuration on SIGHUP")
 						if err := metricServer.Refresh(ctx); err != nil {
 							log.Errorf("refreshing metrics %q", err)
+						}
+						if err := scannerServer.Refresh(ctx); err != nil {
+							log.Errorf("refreshing scanners %q", err)
 						}
 						if err := httpServer.Refresh(ctx); err != nil {
 							log.Errorf("refreshing http  %q", err)
@@ -141,6 +151,7 @@ func Command() *cobra.Command {
 		"How ofter to refresh the configuration from the database.")
 	f.StringVar(&cfg.Endpoint, "endpoint", "/_status/vars",
 		"Endpoint for metrics.")
+	f.BoolVar(&cfg.Inotify, "inotify", false, "enable inotify for scans")
 	f.BoolVar(&cfg.Insecure, "insecure", false, "this flag must be set if no TLS configuration is provided")
 	f.BoolVar(&cfg.ProcMetrics, "proc-metrics", false, "enable the collection of process metrics")
 	f.BoolVar(&cfg.VisusMetrics, "visus-metrics", false, "enable the collection of visus metrics")

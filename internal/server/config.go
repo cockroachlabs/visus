@@ -23,6 +23,7 @@ type Config struct {
 	BindCert, BindKey string        // Paths to Certificate and Key.
 	CaCert            string        // Path to the Root CA.
 	Endpoint          string        // Endpoint for metrics
+	Inotify           bool          // Enable inotify for scans.
 	Insecure          bool          // Sanity check to ensure that the operator really means it.
 	ProcMetrics       bool          // Enable collections of process metrics.
 	Prometheus        string        // URL for the node prometheus endpoint
