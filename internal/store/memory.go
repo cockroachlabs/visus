@@ -22,10 +22,15 @@ import (
 
 // Memory stores the configuration in memory. Used for testing.
 type Memory struct {
-	MainNode    bool
 	collections *sync.Map
 	histograms  *sync.Map
 	scans       *sync.Map
+
+	mu struct {
+		sync.RWMutex
+		err      error // Error to return
+		mainNode bool
+	}
 }
 
 var _ Store = &Memory{}
@@ -33,64 +38,80 @@ var _ Store = &Memory{}
 // DeleteCollection implements store.Store.
 func (m *Memory) DeleteCollection(_ context.Context, name string) error {
 	m.collections.Delete(name)
-	return nil
+	return m.Error()
 }
 
 // DeleteHistogram implements store.Store.
 func (m *Memory) DeleteHistogram(_ context.Context, name string) error {
 	m.histograms.Delete(name)
-	return nil
+	return m.Error()
 }
 
 // DeleteScan implements store.Store.
 func (m *Memory) DeleteScan(_ context.Context, name string) error {
 	m.scans.Delete(name)
-	return nil
+	return m.Error()
+}
+
+// Error returns the injected error
+func (m *Memory) Error() error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mu.err
 }
 
 // GetCollection implements store.Store.
 func (m *Memory) GetCollection(_ context.Context, name string) (*Collection, error) {
-	res, _ := m.collections.Load(name)
-	return res.(*Collection), nil
+	res, ok := m.collections.Load(name)
+	if !ok {
+		return nil, m.Error()
+	}
+	return res.(*Collection), m.Error()
 }
 
 // GetCollectionNames implements store.Store.
 func (m *Memory) GetCollectionNames(_ context.Context) ([]string, error) {
-	return getNames(m.collections)
+	return m.getNames(m.collections)
 }
 
 // GetHistogram implements store.Store.
 func (m *Memory) GetHistogram(_ context.Context, name string) (*Histogram, error) {
-	res, _ := m.histograms.Load(name)
-	return res.(*Histogram), nil
+	res, ok := m.histograms.Load(name)
+	if !ok {
+		return nil, m.Error()
+	}
+	return res.(*Histogram), m.Error()
 }
 
 // GetHistogramNames implements store.Store.
 func (m *Memory) GetHistogramNames(_ context.Context) ([]string, error) {
-	return getNames(m.histograms)
+	return m.getNames(m.histograms)
 }
 
 // GetMetrics implements store.Store.
 func (m *Memory) GetMetrics(ctx context.Context, name string) ([]Metric, error) {
 	coll, _ := m.GetCollection(ctx, name)
-	return coll.Metrics, nil
+	return coll.Metrics, m.Error()
 }
 
 // GetScan implements store.Store.
 func (m *Memory) GetScan(_ context.Context, name string) (*Scan, error) {
-	res, _ := m.scans.Load(name)
-	return res.(*Scan), nil
+	res, ok := m.scans.Load(name)
+	if !ok {
+		return nil, m.Error()
+	}
+	return res.(*Scan), m.Error()
 }
 
 // GetScanNames implements store.Store.
 func (m *Memory) GetScanNames(_ context.Context) ([]string, error) {
-	return getNames(m.scans)
+	return m.getNames(m.scans)
 }
 
 // GetScanPatterns implements store.Store.
 func (m *Memory) GetScanPatterns(ctx context.Context, name string) ([]Pattern, error) {
 	scan, _ := m.GetScan(ctx, name)
-	return scan.Patterns, nil
+	return scan.Patterns, m.Error()
 }
 
 // Init implements store.Store.
@@ -98,37 +119,54 @@ func (m *Memory) Init(_ context.Context) error {
 	m.collections = &sync.Map{}
 	m.histograms = &sync.Map{}
 	m.scans = &sync.Map{}
+	m.InjectError(nil)
 	return nil
+}
+
+// InjectError sets the error that will be returned on each subsequent call.
+func (m *Memory) InjectError(err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mu.err = err
 }
 
 // IsMainNode implements store.Store.
 func (m *Memory) IsMainNode(_ context.Context, lastUpdated time.Time) (bool, error) {
-	return m.MainNode, nil
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.mu.mainNode, m.mu.err
 }
 
 // PutCollection implements store.Store.
 func (m *Memory) PutCollection(_ context.Context, collection *Collection) error {
 	m.collections.Store(collection.Name, collection)
-	return nil
+	return m.Error()
 }
 
 // PutHistogram implements store.Store.
 func (m *Memory) PutHistogram(_ context.Context, histogram *Histogram) error {
 	m.histograms.Store(histogram.Name, histogram)
-	return nil
+	return m.Error()
 }
 
 // PutScan implements store.Store.
 func (m *Memory) PutScan(_ context.Context, scan *Scan) error {
 	m.scans.Store(scan.Name, scan)
-	return nil
+	return m.Error()
 }
 
-func getNames(m *sync.Map) ([]string, error) {
+// SetMainNode sets this store as the main node.
+func (m *Memory) SetMainNode(main bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mu.mainNode = main
+}
+
+func (m *Memory) getNames(vals *sync.Map) ([]string, error) {
 	names := make([]string, 0)
-	m.Range(func(key any, value any) bool {
+	vals.Range(func(key any, value any) bool {
 		names = append(names, key.(string))
 		return true
 	})
-	return names, nil
+	return names, m.Error()
 }
