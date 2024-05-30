@@ -22,12 +22,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/http"
 	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/scanner"
 	"github.com/cockroachlabs/visus/internal/server"
-	"github.com/cockroachlabs/visus/internal/stopper"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
 	"github.com/prometheus/client_golang/prometheus"
@@ -71,7 +71,7 @@ func Command() *cobra.Command {
 			// Start the scheduler.
 			scheduler := gocron.NewScheduler(time.UTC)
 			scheduler.StartAsync()
-			ctx.Go(func() error {
+			ctx.Go(func(ctx *stopper.Context) error {
 				<-ctx.Stopping()
 				scheduler.Stop()
 				log.Info("scheduler stopped")
@@ -105,7 +105,7 @@ func Command() *cobra.Command {
 			// Trap SIGHUP to force configuration reload.
 			sigHup := make(chan os.Signal, 1)
 			signal.Notify(sigHup, syscall.SIGHUP)
-			ctx.Go(func() error {
+			ctx.Go(func(ctx *stopper.Context) error {
 				defer close(sigHup)
 				defer signal.Stop(sigHup)
 				for {

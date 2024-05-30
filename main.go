@@ -22,12 +22,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/cmd/collection"
 	"github.com/cockroachlabs/visus/internal/cmd/histogram"
 	"github.com/cockroachlabs/visus/internal/cmd/initialize"
 	"github.com/cockroachlabs/visus/internal/cmd/scan"
 	"github.com/cockroachlabs/visus/internal/cmd/server"
-	"github.com/cockroachlabs/visus/internal/stopper"
 	joonix "github.com/joonix/log"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -101,7 +101,7 @@ func main() {
 	gracePeriod := 5 * time.Second
 	stop := stopper.WithContext(context.Background())
 	// Stop cleanly on interrupt.
-	stop.Go(func() error {
+	stop.Go(func(stop *stopper.Context) error {
 		ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 		defer cancel()
 		select {

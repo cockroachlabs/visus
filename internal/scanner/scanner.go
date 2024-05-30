@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cockroachlabs/visus/internal/stopper"
+	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/nxadm/tail"
 	"github.com/pkg/errors"
@@ -92,7 +92,7 @@ func (s *Scanner) GetLastModified() time.Time {
 
 // Start scanning the log
 func (s *Scanner) Start(ctx *stopper.Context) error {
-	ctx.Go(func() error {
+	ctx.Go(func(ctx *stopper.Context) error {
 		// Start to scan the file. By default wait for new lines to be
 		// written to file, and retries if the file becomes inaccessible
 		tail, err := s.scan()
@@ -108,7 +108,7 @@ func (s *Scanner) Start(ctx *stopper.Context) error {
 		}
 		return nil
 	})
-	ctx.Go(func() error {
+	ctx.Go(func(ctx *stopper.Context) error {
 		<-ctx.Stopping()
 		s.Stop()
 		log.Infof("Scanner %s stopped", s.target.Name)
