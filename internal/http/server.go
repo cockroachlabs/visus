@@ -191,6 +191,9 @@ func (s *serverImpl) refresh(ctx *stopper.Context) error {
 	if err := s.clientTLSConfig.load(); err != nil {
 		return err
 	}
+	if s.metricsWriter == nil {
+		return nil
+	}
 	if !s.config.RewriteHistograms {
 		s.metricsWriter.SetTranslators(nil)
 		return nil

@@ -33,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestRefreshHistograms verifies we reload the histograms from the store.
 func TestRefreshHistograms(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
@@ -107,7 +108,28 @@ func TestRefreshHistograms(t *testing.T) {
 	a.Equal(h2, translators[0].Histogram())
 }
 
-func TestRefreshTlsConfig(t *testing.T) {
+// TestRefreshNoHistograms verifies that refresh works with no histograms
+func TestRefreshNoHistograms(t *testing.T) {
+	a := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := stopper.WithContext(ctx)
+	mockStore := &store.Memory{}
+	mockStore.Init(ctx)
+	server := &serverImpl{
+		clientTLSConfig: &clientTLSConfig{},
+		keyPair:         &keyPair{},
+		config: &server.Config{
+			RewriteHistograms: false,
+		},
+		store: mockStore,
+	}
+	err := server.refresh(stop)
+	a.NoError(err)
+}
+
+// TestRefreshTLSConfig verifies we can reload the TLS configuration
+func TestRefreshTLSConfig(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
 

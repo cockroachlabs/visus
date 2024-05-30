@@ -244,9 +244,9 @@ func TestCommands(t *testing.T) {
 			name:          "test collection store error",
 		},
 	}
-	for _, tst := range tests {
-		t.Run(tst.name, func(t *testing.T) {
-			tst.execute(ctx, t)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			test.execute(ctx, t)
 		})
 	}
 }
