@@ -1,0 +1,25 @@
+name: query_count
+enabled: true
+scope: node
+frequency: 10
+maxresults: test
+labels: [application,database]
+metrics:
+  - name : exec_count
+    kind : counter
+    help : statement count per application and database.
+query:    
+  SELECT
+    application_name as application,
+    database_name as database,
+    sum(count) AS exec_count
+  FROM
+        crdb_internal.node_statement_statistics
+  WHERE
+        application_name NOT LIKE '$ internal-%'
+  GROUP BY
+        application_name, database_name
+  ORDER BY
+        exec_count DESC
+  LIMIT $1;
+
