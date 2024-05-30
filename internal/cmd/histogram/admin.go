@@ -1,4 +1,4 @@
-// Copyright 2022 Cockroach Labs Inc.
+// Copyright 2024 Cockroach Labs Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,34 +16,63 @@
 package histogram
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
-	"fmt"
-	"os"
+	"sort"
 
-	"github.com/cockroachlabs/visus/internal/database"
+	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/metric"
-	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
-	"github.com/creasty/defaults"
-	log "github.com/sirupsen/logrus"
+	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var databaseURL = ""
 
-type config struct {
-	Enabled bool
-	Name    string
-	Bins    int `default:"10"`
-	Start   int `default:"1000000"`
-	End     int `default:"20000000000"`
-	Regex   string
+// Command runs the admin tools to view and manage the configuration in the database.
+func Command() *cobra.Command {
+	return command(env.Default())
 }
 
-func getCmd() *cobra.Command {
+// command runs the tools to view and manage the configuration in the database.
+// An environment can be injected for standalone testing.
+func command(env *env.Env) *cobra.Command {
+	c := &cobra.Command{
+		Use: "histogram",
+	}
+	f := c.PersistentFlags()
+	c.AddCommand(
+		deleteCmd(env),
+		getCmd(env),
+		listCmd(env),
+		putCmd(env),
+		testCmd(env))
+	f.StringVar(&databaseURL, "url", "",
+		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
+	return c
+}
+
+func deleteCmd(env *env.Env) *cobra.Command {
+	c := &cobra.Command{
+		Use:     "delete",
+		Args:    cobra.ExactArgs(1),
+		Example: `./visus histogram delete regex  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			name := args[0]
+			store, err := env.ProvideStore(ctx, databaseURL)
+			if err != nil {
+				return err
+			}
+			if err := store.DeleteHistogram(ctx, name); err != nil {
+				return errors.Wrapf(err, "unable to delete histogram %s", name)
+			}
+			cmd.Printf("Histogram %s deleted.\n", name)
+			return nil
+		},
+	}
+	return c
+}
+
+func getCmd(env *env.Env) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "get",
 		Args:    cobra.ExactArgs(1),
@@ -51,57 +80,46 @@ func getCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			name := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			store, err := env.ProvideStore(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(conn)
 			histogram, err := store.GetHistogram(ctx, name)
 			if err != nil {
-				fmt.Printf("Error retrieving histogram %s.", name)
-				return err
+				return errors.Wrapf(err, "unable to retrieve histogram %s", name)
 			}
 			if histogram == nil {
-				fmt.Printf("Histogram %s not found\n", name)
-			} else {
-				out, err := yaml.Marshal(config{
-					Enabled: histogram.Enabled,
-					Name:    histogram.Name,
-					Bins:    histogram.Bins,
-					Start:   histogram.Start,
-					End:     histogram.End,
-					Regex:   histogram.Regex,
-				})
-				if err != nil {
-					fmt.Println(err)
-					return err
-				}
-				fmt.Println(string(out))
+				cmd.Printf("Histogram %s not found\n", name)
+				return nil
 			}
+			res, err := marshal(histogram)
+			if err != nil {
+				return errors.Wrapf(err, "unable to retrieve histogram %s", name)
+			}
+			cmd.Print(string(res))
 			return nil
 		},
 	}
 	return c
 }
 
-func listCmd() *cobra.Command {
+func listCmd(env *env.Env) *cobra.Command {
 	c := &cobra.Command{
 		Use:     "list",
 		Example: `./visus histogram list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
+			store, err := env.ProvideStore(ctx, databaseURL)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "unable to retrieve histograms")
 			}
-			store := store.New(conn)
-			names, err := store.GetHistogramNames(ctx)
+			histograms, err := store.GetHistogramNames(ctx)
 			if err != nil {
-				fmt.Print("Error retrieving collections")
-				return err
+				return errors.Wrap(err, "unable to retrieve histograms")
 			}
-			for _, name := range names {
-				fmt.Println(name)
+			sort.Strings(histograms)
+			for _, h := range histograms {
+				cmd.Printf("%s\n", h)
 			}
 			return nil
 		},
@@ -109,60 +127,7 @@ func listCmd() *cobra.Command {
 	return c
 }
 
-func deleteCmd() *cobra.Command {
-	c := &cobra.Command{
-		Use:     "delete",
-		Args:    cobra.ExactArgs(1),
-		Example: `./visus histogram delete regex  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			regex := args[0]
-			conn, err := database.New(ctx, databaseURL)
-			if err != nil {
-				return err
-			}
-			store := store.New(conn)
-			err = store.DeleteHistogram(ctx, regex)
-			if err != nil {
-				fmt.Printf("Error deleting histogram %s.\n", regex)
-				return err
-			}
-			fmt.Printf("Deleted %s histogram.\n", regex)
-			return nil
-		},
-	}
-	return c
-}
-
-func testCmd() *cobra.Command {
-	var prometheus string
-	c := &cobra.Command{
-		Use:     "test",
-		Example: `./visus histogram test --prometheus http://localhost:8080/_status/vars  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
-			if err != nil {
-				return err
-			}
-			store := store.New(conn)
-			translators, err := translator.Load(ctx, store)
-			if err != nil {
-				return err
-			}
-			writer, err := metric.NewWriter(prometheus, nil, translators)
-			if err != nil {
-				return err
-			}
-			return writer.Copy(ctx, cmd.OutOrStdout())
-		},
-	}
-	f := c.Flags()
-	f.StringVar(&prometheus, "prometheus", "", "prometheus endpoint")
-	return c
-}
-
-func putCmd() *cobra.Command {
+func putCmd(env *env.Env) *cobra.Command {
 	var file string
 	c := &cobra.Command{
 		Use:     "put",
@@ -173,56 +138,22 @@ func putCmd() *cobra.Command {
 			if file == "" {
 				return errors.New("yaml configuration required")
 			}
-			conn, err := database.New(ctx, databaseURL)
+			store, err := env.ProvideStore(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			var data []byte
-			if file == "-" {
-				var buffer bytes.Buffer
-				scanner := bufio.NewScanner(os.Stdin)
-				for scanner.Scan() {
-					buffer.Write(scanner.Bytes())
-					buffer.WriteString("\n")
-				}
-				if err := scanner.Err(); err != nil {
-					log.Errorf("reading standard input: %s", err.Error())
-				}
-				data = buffer.Bytes()
-			} else {
-				data, err = os.ReadFile(file)
-				if err != nil {
-					return err
-				}
-			}
-			config := &config{}
-			err = yaml.Unmarshal(data, &config)
+			data, err := env.ReadFile(file)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "unable to read histogram configuration")
 			}
-			if err := defaults.Set(config); err != nil {
-				return err
-			}
-			if config.Regex == "" {
-				return errors.New("regex must be specified")
-			}
-			if config.Name == "" {
-				return errors.New("name must be specified")
-			}
-			st := store.New(conn)
-			err = st.PutHistogram(ctx, &store.Histogram{
-				Enabled: config.Enabled,
-				Name:    config.Name,
-				Bins:    config.Bins,
-				Start:   config.Start,
-				End:     config.End,
-				Regex:   config.Regex,
-			})
+			histogram, err := unmarshal(data)
 			if err != nil {
-				fmt.Printf("Error inserting histogram %s.", config.Name)
-				return err
+				return errors.Wrap(err, "unable to read histogram configuration")
 			}
-			fmt.Printf("histogram %s inserted.\n", config.Name)
+			if err := store.PutHistogram(ctx, histogram); err != nil {
+				return errors.Wrapf(err, "unable to insert histogram %s", histogram.Name)
+			}
+			cmd.Printf("Histogram %s inserted.\n", histogram.Name)
 			return nil
 		},
 	}
@@ -231,20 +162,34 @@ func putCmd() *cobra.Command {
 	return c
 }
 
-// Command runs the admin tools to view and manage the configuration in the database.
-func Command() *cobra.Command {
+func testCmd(env *env.Env) *cobra.Command {
+	var prometheus string
 	c := &cobra.Command{
-		Use: "histogram",
+		Use: "test",
+		Example: `./visus histogram test 
+		--prometheus http://localhost:8080/_status/vars  
+		--url "postgresql://root@localhost:26257/defaultdb?sslmode=disable"`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			store, err := env.ProvideStore(ctx, databaseURL)
+			if err != nil {
+				return errors.Wrap(err, "unable to retrieve histograms")
+			}
+			translators, err := translator.Load(ctx, store)
+			if err != nil {
+				return errors.Wrap(err, "unable to retrieve histograms")
+			}
+			if len(translators) == 0 {
+				return errors.New("found no histograms")
+			}
+			writer, err := metric.NewWriter(prometheus, nil, translators)
+			if err != nil {
+				return errors.Wrap(err, "unable to collect metrics")
+			}
+			return writer.Copy(ctx, cmd.OutOrStdout())
+		},
 	}
-
-	f := c.PersistentFlags()
-	c.AddCommand(
-		getCmd(),
-		listCmd(),
-		deleteCmd(),
-		putCmd(),
-		testCmd())
-	f.StringVar(&databaseURL, "url", "",
-		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
+	f := c.Flags()
+	f.StringVar(&prometheus, "prometheus", "", "prometheus endpoint")
 	return c
 }
