@@ -29,9 +29,10 @@ import (
 
 // Env defines the environment to run the commands.
 type Env struct {
-	testing bool
-	store   store.Store
 	alt     io.Reader
+	roPool  database.Connection
+	store   store.Store
+	testing bool
 }
 
 // Default returns the default environment, for real world use.
@@ -55,6 +56,11 @@ func Testing(ctx context.Context) *Env {
 	}
 }
 
+// InjectMockConnection sets a mock connection for testing.
+func (e *Env) InjectMockConnection(pool database.Connection) {
+	e.roPool = pool
+}
+
 // InjectReader sets the alternative reader to use in the env.
 func (e *Env) InjectReader(r io.Reader) {
 	if e.testing {
@@ -67,6 +73,21 @@ func (e *Env) InjectStoreError(err error) {
 	if mem, ok := e.store.(*store.Memory); e.testing && ok {
 		mem.InjectError(err)
 	}
+}
+
+// ProvideReadOnlyConnection returns the database connection to use for collectors.
+func (e *Env) ProvideReadOnlyConnection(
+	ctx context.Context, databaseURL string,
+) (database.Connection, error) {
+	if e.testing {
+		return e.roPool, nil
+	}
+	var err error
+	e.roPool, err = database.ReadOnly(ctx, databaseURL)
+	if err != nil {
+		return nil, err
+	}
+	return e.roPool, nil
 }
 
 // ProvideStore returns the Store to use.
