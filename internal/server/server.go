@@ -16,7 +16,7 @@
 package server
 
 import (
-	"github.com/cockroachlabs/visus/internal/stopper"
+	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/prometheus/client_golang/prometheus"
 )
 

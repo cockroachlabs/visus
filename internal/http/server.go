@@ -23,8 +23,8 @@ import (
 	"net/url"
 
 	"github.com/NYTimes/gziphandler"
+	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/server"
-	"github.com/cockroachlabs/visus/internal/stopper"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
 	"github.com/go-co-op/gocron"
@@ -140,7 +140,7 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 
 	http.Handle(s.config.Endpoint, gziphandler.GzipHandler(handler))
 
-	ctx.Go(func() error {
+	ctx.Go(func(ctx *stopper.Context) error {
 		var err error
 		if !s.config.Insecure {
 			log.Infof("Starting secure server: %v", s.config.BindAddr)
@@ -158,7 +158,7 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 		}
 		return nil
 	})
-	ctx.Go(func() error {
+	ctx.Go(func(ctx *stopper.Context) error {
 		<-ctx.Stopping()
 		if err := s.httpServer.Shutdown(ctx); err != nil {
 			log.WithError(err).Error("did not shut down cleanly")
