@@ -1,4 +1,4 @@
-// Copyright 2022 Cockroach Labs Inc.
+// Copyright 2024 Cockroach Labs Inc.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,160 +16,186 @@
 package collection
 
 import (
-	"bufio"
-	"bytes"
-	"errors"
-	"fmt"
-	"math"
-	"os"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/collector"
-	"github.com/cockroachlabs/visus/internal/database"
-	"github.com/cockroachlabs/visus/internal/store"
-	"github.com/creasty/defaults"
-	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
-	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var (
 	databaseURL           = ""
-	microsecondsPerSecond = int64(math.Pow10(6))
+	microsecondsPerSecond = int64(1e6)
 )
 
-// metricDef yaml metric definition
-type metricDef struct {
-	Name string
-	Kind string
-	Help string
+// Command runs the scan tools to view and manage the configuration in the database.
+func Command() *cobra.Command {
+	return command(env.Default())
 }
 
-// config yaml collection definition
-type config struct {
-	Name       string
-	Frequency  int
-	MaxResults int
-	Enabled    bool
-	Query      string
-	Labels     []string
-	Metrics    []metricDef
-	Scope      string `default:"node"`
-}
-
-func marshal(collection *store.Collection) ([]byte, error) {
-	metrics := make([]metricDef, 0)
-	for _, m := range collection.Metrics {
-		metric := metricDef{
-			Name: m.Name,
-			Kind: string(m.Kind),
-			Help: m.Help,
-		}
-		metrics = append(metrics, metric)
-	}
-	config := &config{
-		Name:       collection.Name,
-		Frequency:  int(collection.Frequency.Microseconds / microsecondsPerSecond),
-		MaxResults: collection.MaxResult,
-		Enabled:    collection.Enabled,
-		Query:      collection.Query,
-		Labels:     collection.Labels,
-		Metrics:    metrics,
-		Scope:      string(collection.Scope),
-	}
-	return yaml.Marshal(config)
-}
-
-// listCmd list all the collections in the datababse
-func listCmd() *cobra.Command {
+// command runs the tools to view and manage the configuration in the database.
+// An environment can be injected for standalone testing.
+func command(env *env.Env) *cobra.Command {
 	c := &cobra.Command{
-		Use:     "list",
-		Example: `./visus collection list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			conn, err := database.New(ctx, databaseURL)
-			if err != nil {
-				return err
-			}
-			store := store.New(conn)
-			collections, err := store.GetCollectionNames(ctx)
-			if err != nil {
-				fmt.Print("Error retrieving collections")
-				return err
-			}
-			for _, coll := range collections {
-				fmt.Printf("%s\n", coll)
-			}
-			return nil
-		},
+		Use: "collection",
 	}
+	f := c.PersistentFlags()
+	c.AddCommand(
+		getCmd(env),
+		listCmd(env),
+		deleteCmd(env),
+		putCmd(env),
+		testCmd(env))
+	f.StringVar(&databaseURL, "url", "",
+		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	return c
 }
 
-func getCmd() *cobra.Command {
-	c := &cobra.Command{
+// deleteCmd deletes a scan from the database.
+func deleteCmd(env *env.Env) *cobra.Command {
+	return &cobra.Command{
+		Use:     "delete",
+		Args:    cobra.ExactArgs(1),
+		Example: `./visus collection delete collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			collection := args[0]
+			store, err := env.ProvideStore(ctx, databaseURL)
+			if err != nil {
+				return err
+			}
+			if err := store.DeleteCollection(ctx, collection); err != nil {
+				return errors.Wrapf(err, "unable to delete scan %s", collection)
+			}
+			cmd.Printf("Collection %s deleted.\n", collection)
+			return nil
+		},
+	}
+}
+
+// getCmd retrieves a collection configuration from the database.
+func getCmd(env *env.Env) *cobra.Command {
+	return &cobra.Command{
 		Use:     "get",
 		Args:    cobra.ExactArgs(1),
 		Example: `./visus collection get collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			collectionName := args[0]
-			conn, err := database.New(ctx, databaseURL)
+			name := args[0]
+			store, err := env.ProvideStore(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			store := store.New(conn)
-			collection, err := store.GetCollection(ctx, collectionName)
+			collection, err := store.GetCollection(ctx, name)
 			if err != nil {
-				fmt.Printf("Error retrieving collection %s.", collectionName)
-				return err
+				return errors.Wrapf(err, "unable to retrieve collection %s", name)
 			}
 			if collection == nil {
-				fmt.Printf("Collection %s not found\n", collectionName)
-			} else {
-				res, err := marshal(collection)
-				if err != nil {
-					fmt.Printf("Unabled to marshall %s\n", collectionName)
-				}
-				fmt.Println(string(res))
+				cmd.Printf("Collection %s not found\n", name)
+				return nil
+			}
+			res, err := marshal(collection)
+			if err != nil {
+				return errors.Wrapf(err, "unable to retrieve collection %s", name)
+			}
+			cmd.Print(string(res))
+			return nil
+		},
+	}
+}
+
+// listCmd list all the collections in the database
+func listCmd(env *env.Env) *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Example: `./visus collection list  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			store, err := env.ProvideStore(ctx, databaseURL)
+			if err != nil {
+				return errors.Wrap(err, "unable to retrieve collections")
+			}
+			names, err := store.GetCollectionNames(ctx)
+			if err != nil {
+				return errors.Wrap(err, "unable to retrieve collections")
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				cmd.Printf("%s\n", name)
 			}
 			return nil
 		},
 	}
+}
+
+// putCmd inserts a new collection in the database using the specified yaml configuration.
+func putCmd(env *env.Env) *cobra.Command {
+	var file string
+	c := &cobra.Command{
+		Use:     "put",
+		Args:    cobra.ExactArgs(0),
+		Example: `./visus collection put --yaml config.yaml --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			if file == "" {
+				return errors.New("yaml configuration required")
+			}
+			store, err := env.ProvideStore(ctx, databaseURL)
+			if err != nil {
+				return err
+			}
+			data, err := env.ReadFile(file)
+			if err != nil {
+				return errors.Wrap(err, "unable to read collection configuration")
+			}
+			collection, err := unmarshal(data)
+			if err != nil {
+				return errors.Wrap(err, "unable to read collection configuration")
+			}
+			if err := store.PutCollection(ctx, collection); err != nil {
+				return errors.Wrapf(err, "unable to insert collection %s", collection.Name)
+			}
+			cmd.Printf("Collection %s inserted.\n", collection.Name)
+			return nil
+		},
+	}
+	f := c.Flags()
+	f.StringVar(&file, "yaml", "", "file containing the configuration")
 	return c
 }
 
-func testCmd() *cobra.Command {
+func testCmd(env *env.Env) *cobra.Command {
 	var interval time.Duration
 	var count int
 	c := &cobra.Command{
 		Use:     "test",
-		Args:    cobra.ExactArgs(1),
-		Example: `./visus collection test collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
+		Example: `./visus collection test  collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 			collectionName := args[0]
-			conn, err := database.ReadOnly(ctx, databaseURL)
+			st, err := env.ProvideStore(ctx, databaseURL)
 			if err != nil {
 				return err
 			}
-			st := store.New(conn)
+			conn, err := env.ProvideReadOnlyConnection(ctx, databaseURL)
+			if err != nil {
+				return err
+			}
 			coll, err := st.GetCollection(ctx, collectionName)
 			if err != nil {
-				fmt.Printf("Error retrieving collection %s.", collectionName)
-				return err
+				return errors.Wrapf(err, "Error retrieving collection %s", collectionName)
 			}
 			if coll == nil {
-				fmt.Printf("Collection %s not found\n", collectionName)
+				cmd.Printf("Collection %s not found\n", collectionName)
 			} else {
 				collector, err := collector.FromCollection(coll, prometheus.DefaultRegisterer)
 				if err != nil {
-					fmt.Printf("Error collecting metrics %s.", err)
-					return err
+					return errors.Wrapf(err, "Error creating collector for %s", collectionName)
 				}
 				for i := 1; i <= count || count == 0; i++ {
 					if i > 1 {
@@ -179,17 +205,15 @@ func testCmd() *cobra.Command {
 						case <-time.After(interval):
 						}
 					}
-					fmt.Printf("\n---- %s %s -----\n", time.Now().Format("01-02-2006 15:04:05"), coll.Name)
+					cmd.Printf("\n---- %s %s -----\n", time.Now().Format("01-02-2006 15:04:05"), coll.Name)
 					collector.Collect(ctx, conn)
 					gathering, err := prometheus.DefaultGatherer.Gather()
 					if err != nil {
-						fmt.Printf("Error collecting metrics %s.", err)
-						return err
+						return errors.Wrapf(err, "error collecting metrics for %s", collectionName)
 					}
 					for _, mf := range gathering {
 						if strings.HasPrefix(*mf.Name, collectionName) {
-							expfmt.MetricFamilyToText(os.Stdout, mf)
-
+							expfmt.MetricFamilyToText(cmd.OutOrStdout(), mf)
 						}
 					}
 
@@ -201,139 +225,5 @@ func testCmd() *cobra.Command {
 	f := c.Flags()
 	f.DurationVar(&interval, "interval", 10*time.Second, "interval of collection")
 	f.IntVar(&count, "count", 1, "number of times to run the collection. Specify 0 for continuos collection")
-	return c
-}
-
-func deleteCmd() *cobra.Command {
-	c := &cobra.Command{
-		Use:     "delete",
-		Args:    cobra.ExactArgs(1),
-		Example: `./visus collection delete collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			collectionName := args[0]
-			conn, err := database.New(ctx, databaseURL)
-			if err != nil {
-				return err
-			}
-			store := store.New(conn)
-			err = store.DeleteCollection(ctx, args[0])
-			if err != nil {
-				fmt.Printf("Error deleting collection %s.\n", collectionName)
-				return err
-			}
-			fmt.Printf("Collection %s deleted.\n", collectionName)
-			return nil
-		},
-	}
-	return c
-}
-
-func putCmd() *cobra.Command {
-	var file string
-	c := &cobra.Command{
-		Use:     "put",
-		Args:    cobra.ExactArgs(0),
-		Example: `./visus collection put --yaml config.yaml --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			if file == "" {
-				return errors.New("yaml configuration required")
-			}
-			conn, err := database.New(ctx, databaseURL)
-			if err != nil {
-				return err
-			}
-			var data []byte
-			if file == "-" {
-				var buffer bytes.Buffer
-				scanner := bufio.NewScanner(os.Stdin)
-				for scanner.Scan() {
-					buffer.Write(scanner.Bytes())
-					buffer.WriteString("\n")
-				}
-				if err := scanner.Err(); err != nil {
-					log.Errorf("reading standard input: %s", err.Error())
-				}
-				data = buffer.Bytes()
-			} else {
-				data, err = os.ReadFile(file)
-				if err != nil {
-					return err
-				}
-			}
-			config := &config{}
-			err = yaml.Unmarshal(data, &config)
-			if err != nil {
-				return err
-			}
-			if err := defaults.Set(config); err != nil {
-				return err
-			}
-			metrics := make([]store.Metric, 0)
-			for _, m := range config.Metrics {
-				metrics = append(metrics, store.Metric{
-					Name: m.Name,
-					Kind: store.Kind(m.Kind),
-					Help: m.Help,
-				})
-			}
-			var scope store.Scope
-			switch strings.ToLower(config.Scope) {
-			case "node":
-				scope = store.Node
-			case "cluster":
-				scope = store.Cluster
-			default:
-				return errors.New("invalid scope")
-			}
-			if config.Query == "" {
-				return errors.New("query must be specified")
-			}
-			if config.Name == "" {
-				return errors.New("name must be specified")
-			}
-			collection := &store.Collection{
-				Name:      config.Name,
-				Enabled:   config.Enabled,
-				Scope:     scope,
-				MaxResult: config.MaxResults,
-				Frequency: pgtype.Interval{
-					Valid:        true,
-					Microseconds: int64(config.Frequency) * microsecondsPerSecond,
-				},
-				Query:   config.Query,
-				Labels:  config.Labels,
-				Metrics: metrics,
-			}
-			store := store.New(conn)
-			err = store.PutCollection(ctx, collection)
-			if err != nil {
-				fmt.Printf("Error inserting collection %s.\n", config.Name)
-				return err
-			}
-			fmt.Printf("Collection %s inserted.\n", config.Name)
-			return nil
-		},
-	}
-	f := c.Flags()
-	f.StringVar(&file, "yaml", "", "file containing the configuration")
-	return c
-}
-
-// Command runs the collection tools to view and manage the configuration in the database.
-func Command() *cobra.Command {
-	c := &cobra.Command{
-		Use: "collection",
-	}
-	f := c.PersistentFlags()
-	c.AddCommand(
-		getCmd(),
-		listCmd(),
-		deleteCmd(),
-		putCmd(),
-		testCmd())
-	f.StringVar(&databaseURL, "url", "",
-		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	return c
 }
