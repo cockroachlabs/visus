@@ -109,31 +109,6 @@ type cacheValue struct {
 	vec    cacheGC
 }
 
-// New creates a collector with the given name.
-// The labels define the various attributes of the metrics being captured.
-// The query is the SQL query being executed to retrieve the metric values. The query must have an argument
-// to specify the limit on the number results to be returned. The columns must contain the labels specified.
-// The format of the query:
-// (SELECT label1,label2, ..., metric1,metric2,... FROM ... WHERE ... LIMIT $1)
-func New(name string, labels []string, query string) Collector {
-	labelMap := make(map[string]int)
-	for i, l := range labels {
-		labelMap[l] = i
-	}
-	return &collector{
-		enabled:    true,
-		first:      true,
-		frequency:  10,
-		labelMap:   labelMap,
-		labels:     labels,
-		maxResults: 100,
-		metrics:    make(map[string]metric),
-		name:       name,
-		query:      query,
-		registerer: prometheus.DefaultRegisterer,
-	}
-}
-
 // FromCollection creates a collector from a collection configuration stored in the database.
 func FromCollection(coll *store.Collection, registerer prometheus.Registerer) (Collector, error) {
 	labelMap := make(map[string]int)

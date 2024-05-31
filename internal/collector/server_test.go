@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package metric
+package collector
 
 import (
 	"context"
@@ -52,7 +52,7 @@ func TestRefreshCollectors(t *testing.T) {
 	mockStore.Init(ctx)
 	cfg := &server.Config{}
 	registry := prometheus.NewRegistry()
-	server := &metricsServer{
+	server := &serverImpl{
 		config:    cfg,
 		conn:      conn,
 		store:     mockStore,
