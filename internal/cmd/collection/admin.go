@@ -166,15 +166,10 @@ func testCmd() *cobra.Command {
 			if coll == nil {
 				fmt.Printf("Collection %s not found\n", collectionName)
 			} else {
-				collector := collector.New(coll.Name, coll.Labels, coll.Query).
-					WithMaxResults(coll.MaxResult)
-				for _, m := range coll.Metrics {
-					switch m.Kind {
-					case store.Gauge:
-						collector.AddGauge(m.Name, m.Help)
-					case store.Counter:
-						collector.AddCounter(m.Name, m.Help)
-					}
+				collector, err := collector.FromCollection(coll, prometheus.DefaultRegisterer)
+				if err != nil {
+					fmt.Printf("Error collecting metrics %s.", err)
+					return err
 				}
 				for i := 1; i <= count || count == 0; i++ {
 					if i > 1 {

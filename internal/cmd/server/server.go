@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/field-eng-powertools/stopper"
+	"github.com/cockroachlabs/visus/internal/collector"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/http"
-	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/scanner"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
@@ -87,12 +87,12 @@ func Command() *cobra.Command {
 				return err
 			}
 
-			// Start the SQL metrics collector.
-			metricServer, err := metric.New(cfg, store, roConn, registry, scheduler)
+			// Start the collector server.
+			collServer, err := collector.New(cfg, store, roConn, registry, scheduler)
 			if err != nil {
 				return err
 			}
-			if err := metricServer.Start(ctx); err != nil {
+			if err := collServer.Start(ctx); err != nil {
 				return err
 			}
 
@@ -118,7 +118,7 @@ func Command() *cobra.Command {
 						// try to continue with the old configuration for
 						// any server that fails.
 						log.Info("Refreshing configuration on SIGHUP")
-						if err := metricServer.Refresh(ctx); err != nil {
+						if err := collServer.Refresh(ctx); err != nil {
 							log.Errorf("refreshing metrics %q", err)
 						}
 						if err := scannerServer.Refresh(ctx); err != nil {

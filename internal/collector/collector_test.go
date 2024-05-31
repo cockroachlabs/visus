@@ -75,11 +75,36 @@ func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, r
 	err := collector.Collect(context.Background(), mock)
 	require.NoError(t, err)
 }
+
+// newCollector creates a collector with the given name, for testing purposes.
+// The labels define the various attributes of the metrics being captured.
+// The query is the SQL query being executed to retrieve the metric values. The query must have an argument
+// to specify the limit on the number results to be returned. The columns must contain the labels specified.
+// The format of the query:
+// (SELECT label1,label2, ..., metric1,metric2,... FROM ... WHERE ... LIMIT $1)
+func newCollector(name string, labels []string, query string) Collector {
+	labelMap := make(map[string]int)
+	for i, l := range labels {
+		labelMap[l] = i
+	}
+	return &collector{
+		enabled:    true,
+		first:      true,
+		frequency:  10,
+		labelMap:   labelMap,
+		labels:     labels,
+		maxResults: 100,
+		metrics:    make(map[string]metric),
+		name:       name,
+		query:      query,
+		registerer: prometheus.DefaultRegisterer,
+	}
+}
 func TestCollector_Collect(t *testing.T) {
 	a, r := assertions(t)
 	mock, err := pgxmock.NewConn()
 	r.NoError(err)
-	coll := New("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1").
+	coll := newCollector("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1").
 		WithMaxResults(maxResults)
 	err = coll.AddCounter("counter", "counter")
 	r.NoError(err)
@@ -175,7 +200,7 @@ func TestCollector_Collect(t *testing.T) {
 func Test_collector_AddCounter(t *testing.T) {
 	a, r := assertions(t)
 	collName := "test"
-	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
+	coll := newCollector(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
@@ -229,7 +254,7 @@ func Test_collector_AddCounter(t *testing.T) {
 func Test_collector_AddGauge(t *testing.T) {
 	a, r := assertions(t)
 	collName := "test"
-	coll := New(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
+	coll := newCollector(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
