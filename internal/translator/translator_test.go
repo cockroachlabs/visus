@@ -16,13 +16,18 @@ package translator
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
+	"fmt"
+	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/prometheus/common/expfmt"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 //go:embed testdata/input.txt
@@ -40,7 +45,7 @@ var multistoreout string
 func TestHistogramConversion(t *testing.T) {
 	assert := assert.New(t)
 	var parser expfmt.TextParser
-	histogram := store.Histogram{
+	histogram := &store.Histogram{
 		Start: 100,
 		Bins:  10}
 	translator := &translator{
@@ -56,10 +61,75 @@ func TestHistogramConversion(t *testing.T) {
 	}
 }
 
+func newHistogram(name string, enabled bool) *store.Histogram {
+	return &store.Histogram{
+		Bins:    10,
+		Enabled: enabled,
+		End:     1e9,
+		Name:    name,
+		Regex:   fmt.Sprintf("^%s$", name),
+		Start:   1e6,
+	}
+}
+
+// TestLoad verifies we can load histograms from store and building
+// translators for enabled histograms.
+func TestLoad(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	tests := []struct {
+		name       string
+		histograms []*store.Histogram
+	}{
+		{
+			"none",
+			nil,
+		},
+		{
+			"one",
+			[]*store.Histogram{newHistogram("one", true)},
+		},
+		{
+			"two",
+			[]*store.Histogram{newHistogram("one", true), newHistogram("two", true)},
+		},
+		{
+			"one enabled",
+			[]*store.Histogram{newHistogram("one", true), newHistogram("two", false)},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := require.New(t)
+			a := assert.New(t)
+			st := &store.Memory{}
+			st.Init(ctx)
+			want := make([]*store.Histogram, 0)
+			for _, histogram := range tt.histograms {
+				if histogram.Enabled {
+					want = append(want, histogram)
+				}
+				err := st.PutHistogram(ctx, histogram)
+				r.NoError(err)
+			}
+			translators, err := Load(ctx, st)
+			r.NoError(err)
+			r.Equal(len(want), len(translators))
+			for idx, histogram := range want {
+				tr, ok := translators[idx].(*translator)
+				r.True(ok)
+				a.Equal(histogram, tr.histogram)
+				regex := regexp.MustCompile(histogram.Regex)
+				a.Equal(regex, tr.include)
+			}
+		})
+	}
+}
+
 func TestMultiStoreConversion(t *testing.T) {
 	assert := assert.New(t)
 	var parser expfmt.TextParser
-	histogram := store.Histogram{
+	histogram := &store.Histogram{
 		Start: 100,
 		Bins:  10}
 	translator := &translator{
@@ -72,13 +142,12 @@ func TestMultiStoreConversion(t *testing.T) {
 		expfmt.MetricFamilyToText(&buf, mf)
 		assert.Equal(multistoreout, buf.String())
 	}
-
 }
 
 func TestIdentityConversion(t *testing.T) {
 	assert := assert.New(t)
 	var parser expfmt.TextParser
-	histogram := store.Histogram{
+	histogram := &store.Histogram{
 		Start: 100,
 		Bins:  10}
 	translator := &translator{

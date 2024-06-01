@@ -23,7 +23,7 @@ import (
 	"os"
 
 	"github.com/cockroachlabs/visus/internal/database"
-	"github.com/cockroachlabs/visus/internal/http"
+	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
 	"github.com/creasty/defaults"
@@ -146,29 +146,15 @@ func testCmd() *cobra.Command {
 				return err
 			}
 			store := store.New(conn)
-			names, err := store.GetHistogramNames(ctx)
+			translators, err := translator.Load(ctx, store)
 			if err != nil {
-				fmt.Print("Error retrieving histograms")
 				return err
 			}
-			translators := make([]translator.Translator, 0)
-			for _, n := range names {
-				h, err := store.GetHistogram(ctx, n)
-				if err != nil {
-					fmt.Print("Error retrieving histogram")
-					return err
-				}
-				hnew, err := translator.New(*h)
-				if err != nil {
-					log.Fatal(err)
-				}
-				translators = append(translators, hnew)
-			}
-			metricsIn, err := http.ReadMetrics(ctx, prometheus, nil)
+			writer, err := metric.NewWriter(prometheus, nil, translators)
 			if err != nil {
-				log.Fatal(err)
+				return err
 			}
-			return http.WriteMetrics(ctx, metricsIn, true, translators, os.Stdout)
+			return writer.Copy(ctx, cmd.OutOrStdout())
 		},
 	}
 	f := c.Flags()

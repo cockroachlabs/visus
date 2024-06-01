@@ -24,6 +24,7 @@ import (
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
+	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/cockroachlabs/visus/internal/translator"
@@ -38,10 +39,10 @@ type serverImpl struct {
 	config          *server.Config
 	httpServer      *http.Server
 	keyPair         *keyPair
+	metricsWriter   *metric.Writer
 	registry        *prometheus.Registry
 	scheduler       *gocron.Scheduler
 	store           store.Store
-	translators     []translator.Translator
 }
 
 var _ server.Server = &serverImpl{}
@@ -76,6 +77,14 @@ func New(
 			}
 		}
 	}
+	var writer *metric.Writer
+	var err error
+	if cfg.Prometheus != "" {
+		writer, err = metric.NewWriter(cfg.Prometheus, tlsConfig, nil)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &serverImpl{
 		clientTLSConfig: clientTLS,
 		config:          cfg,
@@ -83,11 +92,11 @@ func New(
 			Addr:      cfg.BindAddr,
 			TLSConfig: tlsConfig,
 		},
-		keyPair:     keyPair,
-		registry:    registry,
-		scheduler:   scheduler,
-		store:       st,
-		translators: make([]translator.Translator, 0),
+		keyPair:       keyPair,
+		registry:      registry,
+		scheduler:     scheduler,
+		store:         st,
+		metricsWriter: writer,
 	}, nil
 }
 
@@ -116,13 +125,8 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		if s.config.Prometheus != "" {
-			tlsConfig := s.clientTLSConfig.get()
-			metricsIn, err := ReadMetrics(ctx, s.config.Prometheus, tlsConfig)
-			if err != nil {
-				log.Error(err)
-			}
-			WriteMetrics(ctx, metricsIn, s.config.RewriteHistograms, s.translators, w)
+		if s.metricsWriter != nil {
+			s.metricsWriter.Copy(ctx, w)
 		}
 		metrics, err := s.registry.Gather()
 		if err != nil {
@@ -188,23 +192,13 @@ func (s *serverImpl) refresh(ctx *stopper.Context) error {
 		return err
 	}
 	if !s.config.RewriteHistograms {
+		s.metricsWriter.SetTranslators(nil)
 		return nil
 	}
-	names, err := s.store.GetHistogramNames(ctx)
+	translators, err := translator.Load(ctx, s.store)
 	if err != nil {
 		return err
 	}
-	s.translators = nil
-	for _, name := range names {
-		histogram, err := s.store.GetHistogram(ctx, name)
-		if err != nil {
-			return err
-		}
-		hnew, err := translator.New(*histogram)
-		if err != nil {
-			continue
-		}
-		s.translators = append(s.translators, hnew)
-	}
+	s.metricsWriter.SetTranslators(translators)
 	return nil
 }
