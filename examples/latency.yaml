@@ -1,0 +1,7 @@
+enabled: true
+name: latency
+bins: 10
+start: 1000000
+end: 20000000000
+regex: ^sql_exec_latency$
+
