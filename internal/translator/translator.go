@@ -31,16 +31,19 @@ import (
 type Translator interface {
 	// Translate histograms to a log linear format, and write the result to a writer.
 	Translate(ctx context.Context, family *dto.MetricFamily, out io.Writer) error
+	// Histogram returns a copy of the backing histogram definition.
+	// Used for testing.
+	Histogram() *store.Histogram
 }
 
 // Translator defines the property of a histogram filter.
 type translator struct {
-	histogram store.Histogram
+	histogram *store.Histogram
 	include   *regexp.Regexp
 }
 
 // New instantiate a new translator from a histogram definition.
-func New(h store.Histogram) (Translator, error) {
+func New(h *store.Histogram) (Translator, error) {
 	include, err := regexp.Compile(h.Regex)
 	if err != nil {
 		return nil, err
@@ -51,6 +54,40 @@ func New(h store.Histogram) (Translator, error) {
 	}, nil
 }
 
+// Load is a utility function that loads all the histogram configurations
+// from the store and builds a Translator for each histogram
+func Load(ctx context.Context, store store.Store) ([]Translator, error) {
+	names, err := store.GetHistogramNames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(names) == 0 {
+		return nil, nil
+	}
+	translators := make([]Translator, 0)
+	for _, name := range names {
+		histogram, err := store.GetHistogram(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		if histogram.Enabled {
+			translator, err := New(histogram)
+			if err != nil {
+				return nil, err
+			}
+			translators = append(translators, translator)
+		}
+	}
+	return translators, nil
+}
+
+// Histogram implements Translator
+func (t *translator) Histogram() *store.Histogram {
+	c := *t.histogram
+	return &c
+}
+
+// Translate implements Translator
 func (t *translator) Translate(ctx context.Context, family *dto.MetricFamily, out io.Writer) error {
 	if family.GetType() == dto.MetricType_HISTOGRAM {
 		if t.include.MatchString(family.GetName()) {
