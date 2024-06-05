@@ -14,12 +14,24 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Enable automatic version updates.
-version: 2
-updates:
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "gomod"
+# This workflow checks for key patterns not otherwise matched by GitHub
+# secret scanning.
+name: CRDB Key Linter
+permissions:
+  contents: read
+on:
+  merge_group:
+  push:
+jobs:
+  lint:
+    name: License Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check for CRDB license keys
+        run: |
+          echo "CockroachDB license keys found in the following files:"
+          git grep -lE 'crl-[[:digit:]]+-[[:alnum:]]+' || exit 0
+          exit 1

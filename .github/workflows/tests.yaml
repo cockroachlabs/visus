@@ -1,8 +1,23 @@
+# Copyright 2024 The Cockroach Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
 name: Tests
 permissions: read-all
 on:
   push:
-    branches: [ primary ]
     tags: [ 'v*.*.*' ]
   pull_request:
   workflow_dispatch: # Allow manual runs to kick off benchmarks
@@ -20,10 +35,10 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -34,41 +49,49 @@ jobs:
           echo "go-mod=$(go env GOMODCACHE)">> $GITHUB_OUTPUT
 
       - name: Go Build Cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ${{ steps.cache.outputs.go-build }}
             ${{ steps.cache.outputs.go-mod }}
           key: ${{ runner.os }}-quality-${{ hashFiles('**/go.sum') }}
 
+      - name: Copyright headers
+        run: go run github.com/google/addlicense -c "The Cockroach Authors" -l apache -s -v  -check  -ignore '**/testdata/**/*' .
+     
       # This action should, in general, be a no-op, given the cache above.
       - name: Download all deps
         run: go mod download
 
       - name: crlfmt returns no deltas
-        if: ${{ always() }}
+        if: ${{ !cancelled() }}
         run: |
           DELTA=$(go run github.com/cockroachdb/crlfmt .)
           echo $DELTA
           test -z "$DELTA"
 
       - name: Lint
-        if: ${{ always() }}
+        if: ${{ !cancelled() }}
         run: go run golang.org/x/lint/golint -set_exit_status ./...
 
       - name: Static checks
-        if: ${{ always() }}
+        if: ${{ !cancelled() }}
         run: go run honnef.co/go/tools/cmd/staticcheck -checks all ./...
+
+      - name: Go Vet
+        if: ${{ !cancelled() }}
+        run: go vet ./...
+
   run-tests:
     name: Run tests
     runs-on: ubuntu-latest
     env:
       COVER_OUT: coverage.out
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: et up Go
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
 
@@ -79,7 +102,7 @@ jobs:
           echo "go-mod=$(go env GOMODCACHE)">> $GITHUB_OUTPUT
 
       - name: Go Build Cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ${{ steps.cache.outputs.go-build }}
