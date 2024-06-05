@@ -14,12 +14,23 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# Enable automatic version updates.
-version: 2
-updates:
-  - package-ecosystem: "gomod" # See documentation for possible values
-    directory: "/" # Location of package manifests
-    schedule:
-      interval: "weekly"
-    commit-message:
-      prefix: "gomod"
+changelog:
+  categories:
+    - title: Breaking Changes
+      labels:
+        - R-breaking
+    - title: Enhancements
+      labels:
+        - R-enhancement
+    - title: Bug Fixes
+      labels:
+        - R-bugfix
+    - title: Dependency Updates
+      labels:
+        - dependencies
+    - title: Unclassified Changes
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - R-exclude
