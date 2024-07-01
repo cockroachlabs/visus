@@ -4,7 +4,7 @@ go 1.22.1
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
-	github.com/cockroachdb/crlfmt v0.1.0
+	github.com/cockroachdb/crlfmt v0.2.1
 	github.com/cockroachdb/field-eng-powertools v0.1.1
 	github.com/creasty/defaults v1.7.0
 	github.com/go-co-op/gocron v1.37.0
@@ -34,7 +34,6 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/gostdlib v1.19.0 // indirect
-	github.com/cockroachdb/ttycolor v0.0.0-20210902133924-c7d7dcdde4e8 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
