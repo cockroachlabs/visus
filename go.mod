@@ -4,7 +4,7 @@ go 1.22.1
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
-	github.com/cockroachdb/crlfmt v0.2.1
+	github.com/cockroachdb/crlfmt v0.3.0
 	github.com/cockroachdb/field-eng-powertools v0.1.1
 	github.com/creasty/defaults v1.8.0
 	github.com/go-co-op/gocron v1.37.0
