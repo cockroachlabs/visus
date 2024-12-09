@@ -22,7 +22,7 @@ require (
 	github.com/spf13/cobra v1.8.1
 	github.com/stretchr/testify v1.10.0
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
-	golang.org/x/tools v0.27.0
+	golang.org/x/tools v0.28.0
 	google.golang.org/protobuf v1.35.2
 	gopkg.in/yaml.v3 v3.0.1
 	honnef.co/go/tools v0.5.1
