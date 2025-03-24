@@ -12,7 +12,7 @@ require (
 	github.com/go-co-op/gocron v1.37.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/addlicense v1.1.1
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.7.3
 	github.com/joonix/log v0.0.0-20230221083239-7988383bab32
 	github.com/nxadm/tail v1.4.11
 	github.com/pashagolub/pgxmock/v3 v3.4.0
