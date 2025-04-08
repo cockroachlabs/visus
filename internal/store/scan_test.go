@@ -83,7 +83,7 @@ func TestGetScan(t *testing.T) {
 		{"none", nil, false},
 		{"no_patterns", &Scan{
 			Enabled:      true,
-			Format:       CRDBV2,
+			Format:       CRDBv2,
 			Path:         "/tmp/test.log",
 			LastModified: pgtype.Timestamp{Time: time.Now()},
 			Name:         "no_patterns",
@@ -91,7 +91,7 @@ func TestGetScan(t *testing.T) {
 		}, false},
 		{"with_patterns", &Scan{
 			Enabled:      true,
-			Format:       CRDBV2,
+			Format:       CRDBv2,
 			Path:         "/tmp/test.log",
 			LastModified: pgtype.Timestamp{Time: time.Now()},
 			Patterns: []Pattern{
@@ -142,7 +142,7 @@ func TestPutScan(t *testing.T) {
 	tests := []test{
 		{"no_patterns", &Scan{
 			Enabled:      true,
-			Format:       CRDBV2,
+			Format:       CRDBv2,
 			Path:         "/tmp/test.log",
 			LastModified: pgtype.Timestamp{Time: time.Now()},
 			Name:         "no_patterns",
@@ -150,7 +150,7 @@ func TestPutScan(t *testing.T) {
 		}, false},
 		{"with_patterns", &Scan{
 			Enabled:      true,
-			Format:       CRDBV2,
+			Format:       CRDBv2,
 			Path:         "/tmp/test.log",
 			LastModified: pgtype.Timestamp{Time: time.Now()},
 			Patterns: []Pattern{

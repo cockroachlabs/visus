@@ -16,10 +16,8 @@ package scanner
 
 import (
 	"bytes"
-	"context"
 	_ "embed" // embedding sql statements
 	"testing"
-	"time"
 
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,6 +42,9 @@ func testVerify(t *testing.T, expected map[string]string) {
 //go:embed testdata/all.txt
 var allExpected string
 
+//go:embed testdata/auth.txt
+var authExpected string
+
 //go:embed testdata/regex.txt
 var regexExpected string
 
@@ -64,7 +65,7 @@ func TestScanner(t *testing.T) {
 			"all",
 			&store.Scan{
 				Enabled: true,
-				Format:  store.CRDBV2,
+				Format:  store.CRDBv2,
 				Name:    "crdb",
 				Path:    "./testdata/sample.log",
 				Patterns: []store.Pattern{
@@ -83,7 +84,7 @@ func TestScanner(t *testing.T) {
 			"regex",
 			&store.Scan{
 				Enabled: true,
-				Format:  store.CRDBV2,
+				Format:  store.CRDBv2,
 				Name:    "crdb",
 				Path:    "./testdata/sample.log",
 				Patterns: []store.Pattern{
@@ -102,7 +103,7 @@ func TestScanner(t *testing.T) {
 			"multiple regex",
 			&store.Scan{
 				Enabled: true,
-				Format:  store.CRDBV2,
+				Format:  store.CRDBv2,
 				Name:    "crdb",
 				Path:    "./testdata/sample.log",
 				Patterns: []store.Pattern{
@@ -123,9 +124,27 @@ func TestScanner(t *testing.T) {
 				"crdb_cache": cacheExpected,
 			},
 		},
+		{
+			"auth",
+			&store.Scan{
+				Enabled: true,
+				Format:  store.CRDBv2Auth,
+				Name:    "crdb",
+				Path:    "./testdata/auth.log",
+				Patterns: []store.Pattern{
+					{
+						Name:  "auth",
+						Regex: "client_authentication_ok",
+						Help:  "auth events",
+					},
+				},
+			},
+			map[string]string{
+				"crdb_auth": authExpected,
+			},
+		},
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := require.New(t)
@@ -135,8 +154,7 @@ func TestScanner(t *testing.T) {
 			r.NoError(err)
 			tail, err := s.scan()
 			r.NoError(err)
-			err = s.parser(ctx, tail, s.metrics)
-			r.NoError(err)
+			s.parse(tail)
 			testVerify(t, tt.want)
 		})
 	}

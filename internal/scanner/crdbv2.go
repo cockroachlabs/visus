@@ -15,36 +15,34 @@
 package scanner
 
 import (
-	"context"
 	"regexp"
 	"strings"
-
-	"github.com/nxadm/tail"
 )
 
 var crdbPrefix = regexp.MustCompile("^[FEIW][0-9][0-9][0-9][0-9][0-9][0-9] ")
 
-// scanCockroachLog scan a cockroach log.
-func scanCockroachLog(_ context.Context, tail *tail.Tail, metrics map[string]*Metric) error {
-	for line := range tail.Lines {
-		for _, m := range metrics {
-			if !crdbPrefix.Match([]byte(line.Text)) {
-				continue
-			}
-			if m.regex.Match([]byte(line.Text)) {
-				fields := strings.Split(line.Text, " ")
-				module := ""
-				if len(fields) >= 4 {
-					_, after, found := strings.Cut(fields[3], "@")
-					if found {
-						module, _, _ = strings.Cut(after, ":")
-					} else {
-						module, _, _ = strings.Cut(fields[3], ":")
-					}
-				}
-				m.counter.WithLabelValues(string(line.Text[0]), module).Inc()
+// CRDBv2Parser parses CockroachDB logs.
+type CRDBv2Parser struct{}
+
+var _ Parser = &CRDBv2Parser{}
+
+// Parse implements Parser.
+func (c *CRDBv2Parser) Parse(line string, metric *Metric) error {
+	if !crdbPrefix.Match([]byte(line)) {
+		return nil
+	}
+	if metric.Match(line) {
+		fields := strings.Split(line, " ")
+		module := ""
+		if len(fields) >= 4 {
+			_, after, found := strings.Cut(fields[3], "@")
+			if found {
+				module, _, _ = strings.Cut(after, ":")
+			} else {
+				module, _, _ = strings.Cut(fields[3], ":")
 			}
 		}
+		metric.counter.WithLabelValues(string(line[0]), module).Inc()
 	}
 	return nil
 }
