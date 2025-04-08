@@ -209,6 +209,39 @@ cockroach_log_events{level="I",source="jobs/job_scheduler.go"} 3
 cockroach_log_events{level="I",source="jobs/registry.go"} 12
 ```
 
+## Scanning auth logs
+
+Visus can also be used to scan cockroachdb sql authorization log files: it will produce metrics
+for each successful authentication event.
+For instance to collect all the authentication events in the cockroach-sql-auth.log file, define
+a scan configuration `auth.yaml` as follows:
+
+```yaml
+name: cockroach_auth_log
+enabled: true
+format: crdb-v2-auth
+path: /var/log/cockroach-sql-auth.log
+patterns:
+  - name : auth
+    help : number of successful login per user
+```
+
+Insert the scan configuration in the database:
+
+```bash
+$VISUS_ADMIN  scan put --yaml - < auth.yaml
+```
+
+Example of the metrics produced:
+
+```text
+# HELP crdb_auth number of successful login per user
+# TYPE crdb_auth counter
+crdb_auth{event="client_authentication_ok",indentity="craig",method="cert-password",transport="hostssl",user="craig"} 1
+crdb_auth{event="client_authentication_ok",indentity="roachprod",method="cert-password",transport="hostssl",user="roachprod"} 2
+crdb_auth{event="client_authentication_ok",indentity="root",method="cert-password",transport="hostssl",user="root"} 3
+```
+
 ## Histogram rewriting
 
 Visus can also act as a proxy to filter and rewrite CockroachDB histograms (v22.1 and earlier) from a log-2 linear format (HDR histograms) to a log-10 linear format.

@@ -29,8 +29,10 @@ import (
 type LogFormat string
 
 const (
-	// CRDBV2 is the format of the cockroach log.
-	CRDBV2 = LogFormat("crdb-v2")
+	// CRDBv2 is the format of the cockroach log.
+	CRDBv2 = LogFormat("crdb-v2")
+	// CRDBv2Auth is the format of the cockroach auth log.
+	CRDBv2Auth = LogFormat("crdb-v2-auth")
 )
 
 // A Pattern defines the regular expression to match to increase the pattern counter

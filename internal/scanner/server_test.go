@@ -50,7 +50,7 @@ func TestRefreshScanners(t *testing.T) {
 	now := time.Now()
 	crdbScan := &store.Scan{
 		Enabled: true,
-		Format:  store.CRDBV2,
+		Format:  store.CRDBv2,
 		LastModified: pgtype.Timestamp{
 			Time:  now,
 			Valid: true,
@@ -105,7 +105,7 @@ func TestRefreshScanners(t *testing.T) {
 	pebbleTime := time.Now()
 	pebbleScan := &store.Scan{
 		Enabled: true,
-		Format:  store.CRDBV2,
+		Format:  store.CRDBv2,
 		LastModified: pgtype.Timestamp{
 			Time:  pebbleTime,
 			Valid: true,
