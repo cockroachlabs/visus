@@ -16,7 +16,6 @@
 package scanner
 
 import (
-	"context"
 	"io"
 	"regexp"
 	"sync"
@@ -44,21 +43,29 @@ type Metric struct {
 	regex   *regexp.Regexp
 }
 
+// Match checks if the line satisfies the regex.
+func (m *Metric) Match(line string) bool {
+	return m.regex.Match([]byte(line))
+}
+
 // Scanner scans a log file to extract the given metrics.
 type Scanner struct {
 	config     *Config
 	metrics    map[string]*Metric
 	registerer prometheus.Registerer
 	target     *store.Scan
-	parser     Parse
+	parser     Parser
 	mu         struct {
 		sync.RWMutex
 		tail *tail.Tail
 	}
 }
 
-// Parse implements the custom logic to parse a specific log file type.
-type Parse func(context.Context, *tail.Tail, map[string]*Metric) error
+// Parser implements the custom logic to parse a specific log file type.
+type Parser interface {
+	// Parse a single line and produce a metric if the line satisfy the metric filter.
+	Parse(string, *Metric) error
+}
 
 // FromConfig creates a new scanner, based on the configuration provided.
 func FromConfig(
@@ -70,15 +77,24 @@ func FromConfig(
 		registerer: registerer,
 		target:     scan,
 	}
-	for _, p := range scan.Patterns {
-		err := scanner.addCounter(p)
-		if err != nil {
-			return nil, err
-		}
-	}
+
 	switch scan.Format {
-	case store.CRDBV2:
-		scanner.parser = scanCockroachLog
+	case store.CRDBv2Auth:
+		scanner.parser = &CRDBv2AuthParser{}
+		for _, p := range scan.Patterns {
+			err := scanner.addCounter(p, []string{"user", "identity", "method", "transport", "event"})
+			if err != nil {
+				return nil, err
+			}
+		}
+	case store.CRDBv2:
+		scanner.parser = &CRDBv2Parser{}
+		for _, p := range scan.Patterns {
+			err := scanner.addCounter(p, []string{"level", "source"})
+			if err != nil {
+				return nil, err
+			}
+		}
 	default:
 		return nil, errors.Errorf("format not supported %s", scan.Format)
 	}
@@ -101,11 +117,7 @@ func (s *Scanner) Start(ctx *stopper.Context) error {
 			return errors.WithStack(err)
 		}
 		log.Infof("Scanner %s started", s.target.Name)
-		err = s.parser(ctx, tail, s.metrics)
-		if err != nil {
-			log.Errorf("Scanner %s failed. %s", s.target.Name, err.Error())
-			errors.WithStack(err)
-		}
+		s.parse(tail)
 		return nil
 	})
 	ctx.Go(func(ctx *stopper.Context) error {
@@ -132,14 +144,14 @@ func (s *Scanner) Stop() error {
 
 // addCounter adds a metric counter to the Prometheus registry.
 // The counter track the number of lines matching the pattern.
-func (s *Scanner) addCounter(pattern store.Pattern) error {
+func (s *Scanner) addCounter(pattern store.Pattern, labels []string) error {
 	metricName := s.target.Name + "_" + pattern.Name
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: metricName,
 			Help: pattern.Help,
 		},
-		[]string{"level", "source"},
+		labels,
 	)
 	s.registerer.Unregister(vec)
 	if err := s.registerer.Register(vec); err != nil {
@@ -149,12 +161,25 @@ func (s *Scanner) addCounter(pattern store.Pattern) error {
 	if err != nil {
 		return err
 	}
-	log.Debugf("registering counter %s (%s)", metricName, pattern.Regex)
+	log.Infof("registering counter %s (%s)", metricName, pattern.Regex)
 	s.metrics[pattern.Name] = &Metric{
 		counter: vec,
 		regex:   regex,
 	}
 	return nil
+}
+
+// parse each line in the file.
+// Errors are only logged without stopping processing the file.
+func (s *Scanner) parse(tail *tail.Tail) {
+	for line := range tail.Lines {
+		for _, metric := range s.metrics {
+			if err := s.parser.Parse(line.Text, metric); err != nil {
+				errorCounts.WithLabelValues(tail.Filename).Inc()
+				log.WithError(err).Error("failed to parse auth object", line.Num)
+			}
+		}
+	}
 }
 
 // scan opens the file and parses new lines as they are written to the file.

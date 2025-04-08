@@ -1,0 +1,5 @@
+# HELP crdb_auth auth events
+# TYPE crdb_auth counter
+crdb_auth{event="client_authentication_ok",identity="craig",method="cert-password",transport="hostssl",user="craig"} 1
+crdb_auth{event="client_authentication_ok",identity="roachprod",method="cert-password",transport="hostssl",user="roachprod"} 2
+crdb_auth{event="client_authentication_ok",identity="root",method="cert-password",transport="hostssl",user="root"} 3
