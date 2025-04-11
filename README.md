@@ -172,6 +172,52 @@ Start the server to enable collection of metrics from Prometheus.
 $VISUS_USER start --bind-addr :8888 --insecure --endpoint "/_status/custom" 
 ```
 
+### Specifying databases for queries scoped to a database
+
+Some queries are database specific (for instance, `SHOW TABLES`). To run the query
+across multiple databases, it is possible to provide an additional query to
+select the databases, for instance:
+
+```yaml
+name: tables_rows
+enabled: true
+scope: cluster
+frequency: 60
+maxresults: 100
+labels: [table_name]
+metrics:
+  - name : estimated_row_count
+    kind : gauge
+    help : number of rows per table
+databases:
+  SELECT database_name
+  FROM [SHOW DATABASES]
+  WHERE OWNER != 'node'
+  AND database_name != 'defaultdb'
+  AND NOT database_name like '\_%';
+query:
+  SELECT table_name, estimated_row_count::float
+  FROM [SHOW TABLES]
+  LIMIT $1;
+```
+
+Sample results:
+
+```text
+# HELP tables_rows_estimated_row_count number of rows per table
+# TYPE tables_rows_estimated_row_count gauge
+tables_rows_estimated_row_count{_database="bank",table_name="bank"} 1000
+tables_rows_estimated_row_count{_database="tpcc",table_name="customer"} 30000
+tables_rows_estimated_row_count{_database="tpcc",table_name="district"} 10
+tables_rows_estimated_row_count{_database="tpcc",table_name="history"} 30000
+tables_rows_estimated_row_count{_database="tpcc",table_name="item"} 100000
+tables_rows_estimated_row_count{_database="tpcc",table_name="new_order"} 9000
+tables_rows_estimated_row_count{_database="tpcc",table_name="order"} 30000
+tables_rows_estimated_row_count{_database="tpcc",table_name="order_line"} 299136
+tables_rows_estimated_row_count{_database="tpcc",table_name="stock"} 100000
+tables_rows_estimated_row_count{_database="tpcc",table_name="warehouse"} 1
+```
+
 ## Scanning logs
 
 Visus can also be used to scan cockroachdb log files: it will produce metrics

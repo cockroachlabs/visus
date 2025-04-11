@@ -1,0 +1,37 @@
+# Copyright 2024 The Cockroach Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+name: tables_rows
+enabled: true
+scope: cluster
+frequency: 60
+maxresults: 100
+labels: [table_name]
+metrics:
+  - name : estimated_row_count
+    kind : gauge
+    help : number of rows per table
+# select a subset of databases.
+databases:
+  SELECT database_name
+  FROM [SHOW DATABASES]
+  WHERE OWNER != 'node'
+  AND database_name != 'defaultdb'
+  AND NOT database_name like '\_%';
+query:
+  SELECT table_name, estimated_row_count::float
+  FROM [SHOW TABLES]
+  LIMIT $1;

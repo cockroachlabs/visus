@@ -14,4 +14,4 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
-select name, updated, enabled, scope, maxResults, frequency, query, labels from _visus.collection where name = $1
+select name, updated, enabled, scope, maxResults, frequency, databases, query, labels from _visus.collection where name = $1

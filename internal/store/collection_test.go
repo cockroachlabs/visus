@@ -109,14 +109,15 @@ func TestGetCollection(t *testing.T) {
 		mock, err := pgxmock.NewConn()
 		store := New(mock)
 		require.NoError(t, err)
-		collQuery := mock.ExpectQuery("select name, updated, enabled, scope, maxResults, frequency, query, labels from _visus.collection where name = .+").
+		collQuery := mock.ExpectQuery("select name, updated, enabled, scope, maxResults, frequency, databases, query, labels from _visus.collection where name = .+").
 			WithArgs(tt.name)
-		res := mock.NewRows([]string{"name", "updated", "enabled", "scope", "maxResults", "frequency", "query", "labels"})
+		res := mock.NewRows([]string{"name", "updated", "enabled", "scope", "maxResults", "frequency", "databases", "query", "labels"})
 		if tt.collection != nil {
 			res.AddRow(
 				tt.name, tt.collection.LastModified,
 				tt.collection.Enabled, tt.collection.Scope,
 				tt.collection.MaxResult, tt.collection.Frequency,
+				tt.collection.Databases,
 				tt.collection.Query, tt.collection.Labels,
 			)
 		}
@@ -181,9 +182,10 @@ func TestPutCollection(t *testing.T) {
 		mock.ExpectExec("delete from _visus.metric where collection = .+").WithArgs(tt.collection.Name).
 			WillReturnResult(pgxmock.NewResult("DELETE", 0))
 		mock.ExpectExec(
-			`UPSERT INTO _visus.collection \(name, enabled, scope, maxResults, frequency, query, labels, updated\) VALUES .+`).
+			`UPSERT INTO _visus.collection \(name, enabled, scope, maxResults, frequency, databases, query, labels, updated\) VALUES .+`).
 			WithArgs(tt.collection.Name, tt.collection.Enabled, tt.collection.Scope,
-				tt.collection.MaxResult, tt.collection.Frequency, tt.collection.Query,
+				tt.collection.MaxResult, tt.collection.Frequency,
+				tt.collection.Databases, tt.collection.Query,
 				tt.collection.Labels).
 			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 		for _, metric := range tt.collection.Metrics {

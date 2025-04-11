@@ -27,6 +27,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/pashagolub/pgxmock/v3"
 	"github.com/stretchr/testify/assert"
@@ -87,6 +88,7 @@ func mockResults(t *testing.T) database.Connection {
 	mock, err := pgxmock.NewConn()
 	r.NoError(err)
 	columns := []string{"database", "queries"}
+	mock.ExpectBeginTx(pgx.TxOptions{})
 	query := mock.ExpectQuery("SELECT database,queries FROM stats LIMIT .+").WithArgs(1)
 	res := mock.NewRows(columns)
 	res.AddRow("one", 10)

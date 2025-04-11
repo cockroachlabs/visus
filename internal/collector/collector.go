@@ -63,6 +63,7 @@ type collector struct {
 	labels       []string
 	labelMap     map[string]int
 	metrics      map[string]metric
+	databases    string
 	query        string
 	first        bool
 	metricsCache *lru.Cache
@@ -73,6 +74,8 @@ type collector struct {
 		inUse bool
 	}
 }
+
+const databaseLabel = "_database"
 
 // MetricKind specify the type of the metric: counter or gauge.
 //
@@ -126,6 +129,7 @@ func FromCollection(coll *store.Collection, registerer prometheus.Registerer) (C
 		metrics:      make(map[string]metric),
 		name:         coll.Name,
 		query:        coll.Query,
+		databases:    coll.Databases,
 		registerer:   registerer,
 	}
 	for _, m := range coll.Metrics {
@@ -154,7 +158,7 @@ func (c *collector) AddCounter(name string, help string) error {
 			Help: help,
 			Name: metricName,
 		},
-		c.labels,
+		c.getAllLabels(),
 	)
 	c.registerer.Unregister(vec)
 	if err := c.registerer.Register(vec); err != nil {
@@ -180,11 +184,10 @@ func (c *collector) AddGauge(name string, help string) error {
 			Name: metricName,
 			Help: help,
 		},
-		c.labels,
+		c.getAllLabels(),
 	)
 	c.registerer.Unregister(vec)
 	if err := c.registerer.Register(vec); err != nil {
-		log.Errorf("Unable to register %s. Error = %s", name, err.Error())
 		return err
 	}
 	log.Tracef("registering gauge %s", metricName)
@@ -211,76 +214,29 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 		c.mu.inUse = false
 	}()
 	c.maybeInitCache()
-
-	query := c.query
-	log.Debugf("Collect %s ", c.name)
-	log.Tracef("Collect %s query %s ", c.name, query)
-	rows, err := conn.Query(ctx, query, c.maxResults)
-	if err != nil {
-		log.Errorf("Collect %s \n%s", err.Error(), c.query)
-		return err
-	}
-	defer rows.Close()
 	c.resetGauges()
-	desc := rows.FieldDescriptions()
-	if len(desc) != len(c.labels)+len(c.metrics) {
-		log.Errorf("%s: column mismatch %v %d %v \n", c.name, desc, len(c.labels), c.metrics)
-		return errors.New("columns returned in the query must be match labels+metrics")
-	}
-	for rows.Next() {
-		values, err := rows.Values()
+	databases := make([]string, 0)
+	if c.databases != "" {
+		rows, err := conn.Query(ctx, c.databases)
 		if err != nil {
-			log.Errorf("%s: unable to decode values; %s", c.name, err.Error())
-			continue
+			log.Errorf("Collect %s \n%s", err.Error(), c.query)
+			return err
 		}
-		labels := make([]string, len(c.labels))
-		for i, v := range values {
-			colName := string(desc[i].Name)
-			if pos, ok := c.labelMap[colName]; ok {
-				if value, ok := v.(string); ok {
-					labels[pos] = value
-				} else {
-					log.Errorf("%s: unknown type %T for label %s", c.name, v, colName)
-				}
-			} else if _, ok := c.metrics[colName]; ok {
-				metric := c.metrics[colName]
-				switch vec := metric.vec.(type) {
-				case *prometheus.CounterVec:
-					switch value := v.(type) {
-					case float64:
-						c.counterAdd(vec, metric.name, labels, value)
-					case int:
-						c.counterAdd(vec, metric.name, labels, float64(value))
-					case pgtype.Numeric:
-						if floatValue, err := value.Float64Value(); err != nil {
-							log.Errorf("%s: collect %s", c.name, err.Error())
-						} else {
-							c.counterAdd(vec, metric.name, labels, floatValue.Float64)
-						}
-					case nil:
-					default:
-						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
-					}
-				case *prometheus.GaugeVec:
-					switch value := v.(type) {
-					case float64:
-						c.gaugeSet(vec, metric.name, labels, value)
-					case int:
-						c.gaugeSet(vec, metric.name, labels, float64(value))
-					case pgtype.Numeric:
-						if floatValue, err := value.Float64Value(); err != nil {
-							log.Errorf("%s: collect %s", c.name, err.Error())
-						} else {
-							c.gaugeSet(vec, metric.name, labels, floatValue.Float64)
-						}
-					case nil:
-					default:
-						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
-					}
-				}
-			} else {
-				log.Errorf("%s: unknown column %s", c.name, colName)
+		defer rows.Close()
+		for rows.Next() {
+			values, err := rows.Values()
+			if err != nil {
+				return err
 			}
+			databases = append(databases, values[0].(string))
+
+		}
+	} else {
+		databases = []string{""}
+	}
+	for _, db := range databases {
+		if err := c.collectLocked(ctx, db, conn); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -324,6 +280,100 @@ func (c *collector) WithRegisterer(reg prometheus.Registerer) Collector {
 	return c
 }
 
+// Collect execute the query and updates the Prometheus metrics.
+// (TODO: silvano) handle global collectors (run only on one node)
+func (c *collector) collectLocked(ctx context.Context, db string, conn database.Connection) error {
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Commit(ctx)
+	query := c.query
+	log.Debugf("Collect %s %s", db, c.name)
+	log.Tracef("Collect %s query %s ", c.name, query)
+	if db != "" {
+		if _, err := tx.Exec(ctx, "USE $1", db); err != nil {
+			tx.Rollback(ctx)
+			return err
+		}
+	}
+	rows, err := tx.Query(ctx, query, c.maxResults)
+	if err != nil {
+		log.Errorf("Collect %s \n%s", err.Error(), c.query)
+		tx.Rollback(ctx)
+		return err
+	}
+	defer rows.Close()
+
+	desc := rows.FieldDescriptions()
+	if len(desc) != len(c.labels)+len(c.metrics) {
+		log.Errorf("%s: column mismatch %v %d %d \n", c.name, desc, len(c.labels), len(c.metrics))
+		tx.Rollback(ctx)
+		return errors.New("columns returned in the query must be match labels+metrics")
+	}
+	labels := c.getAllLabels()
+	for rows.Next() {
+		values, err := rows.Values()
+		if err != nil {
+			log.Errorf("%s: unable to decode values; %s", c.name, err.Error())
+			continue
+		}
+		labelValues := make([]string, len(labels))
+		if db != "" {
+			labelValues[len(labelValues)-1] = db
+		}
+		for i, v := range values {
+			colName := string(desc[i].Name)
+			if pos, ok := c.labelMap[colName]; ok {
+				if value, ok := v.(string); ok {
+					labelValues[pos] = value
+				} else {
+					log.Errorf("%s: unknown type %T for label %s", c.name, v, colName)
+				}
+			} else if _, ok := c.metrics[colName]; ok {
+				metric := c.metrics[colName]
+				switch vec := metric.vec.(type) {
+				case *prometheus.CounterVec:
+					switch value := v.(type) {
+					case float64:
+						c.counterAdd(vec, metric.name, labelValues, value)
+					case int:
+						c.counterAdd(vec, metric.name, labelValues, float64(value))
+					case pgtype.Numeric:
+						if floatValue, err := value.Float64Value(); err != nil {
+							log.Errorf("%s: collect %s", c.name, err.Error())
+						} else {
+							c.counterAdd(vec, metric.name, labelValues, floatValue.Float64)
+						}
+					case nil:
+					default:
+						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
+					}
+				case *prometheus.GaugeVec:
+					switch value := v.(type) {
+					case float64:
+						c.gaugeSet(vec, metric.name, labelValues, value)
+					case int:
+						c.gaugeSet(vec, metric.name, labelValues, float64(value))
+					case pgtype.Numeric:
+						if floatValue, err := value.Float64Value(); err != nil {
+							log.Errorf("%s: collect %s", c.name, err.Error())
+						} else {
+							c.gaugeSet(vec, metric.name, labelValues, floatValue.Float64)
+						}
+					case nil:
+					default:
+						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
+					}
+				}
+			} else {
+				log.Errorf("%s: unknown column %s", c.name, colName)
+			}
+		}
+	}
+	return nil
+}
+
 // counterAdd adds the new value to the counter.
 func (c *collector) counterAdd(
 	vec *prometheus.CounterVec, name string, labels []string, value float64,
@@ -358,6 +408,14 @@ func (c *collector) gaugeSet(
 	}
 	vec.WithLabelValues(labels...).Set(value)
 	c.metricsCache.Add(key, cacheValue{labels, value, vec})
+}
+
+func (c *collector) getAllLabels() []string {
+	labels := c.labels
+	if c.databases != "" {
+		labels = append(labels, databaseLabel)
+	}
+	return labels
 }
 
 func (c *collector) getKey(name string, labels []string) (string, error) {
