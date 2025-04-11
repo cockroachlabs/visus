@@ -14,4 +14,4 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
-select metric, regex, help from _visus.pattern where scan = $1
+select metric, regex, exclude, help from _visus.pattern where scan = $1

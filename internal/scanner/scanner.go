@@ -40,11 +40,17 @@ type Config struct {
 // Metric defines the prometheus counter to increment when a line matches the regular expression.
 type Metric struct {
 	counter *prometheus.CounterVec
+	exclude *regexp.Regexp
 	regex   *regexp.Regexp
 }
 
 // Match checks if the line satisfies the regex.
 func (m *Metric) Match(line []byte) bool {
+	if m.exclude.String() != "" {
+		if m.exclude.Match(line) {
+			return false
+		}
+	}
 	return m.regex.Match(line)
 }
 
@@ -161,9 +167,14 @@ func (s *Scanner) addCounter(pattern store.Pattern, labels []string) error {
 	if err != nil {
 		return err
 	}
+	exclude, err := regexp.Compile(pattern.Exclude)
+	if err != nil {
+		return err
+	}
 	log.Infof("registering counter %s (%s)", metricName, pattern.Regex)
 	s.metrics[pattern.Name] = &Metric{
 		counter: vec,
+		exclude: exclude,
 		regex:   regex,
 	}
 	return nil

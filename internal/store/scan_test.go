@@ -95,8 +95,8 @@ func TestGetScan(t *testing.T) {
 			Path:         "/tmp/test.log",
 			LastModified: pgtype.Timestamp{Time: time.Now()},
 			Patterns: []Pattern{
-				{"cdc", "cdc", "cdc events"},
-				{"kv", "kv", "kv events"},
+				{"cdc", "cdc", "", "cdc events"},
+				{"kv", "kv", "exclude", "kv events"},
 			},
 			Name: "with_patterns",
 		}, false},
@@ -114,12 +114,12 @@ func TestGetScan(t *testing.T) {
 			)
 		}
 		collQuery.WillReturnRows(res)
-		metricQuery := mock.ExpectQuery("select metric, regex, help from _visus.pattern where scan = .+").
+		metricQuery := mock.ExpectQuery("select metric, regex, exclude, help from _visus.pattern where scan = .+").
 			WithArgs(tt.name)
-		res = mock.NewRows([]string{"metric", "regex", "help"})
+		res = mock.NewRows([]string{"metric", "regex", "exclude", "help"})
 		if tt.scan != nil {
 			for _, row := range tt.scan.Patterns {
-				res.AddRow(row.Name, row.Regex, row.Help)
+				res.AddRow(row.Name, row.Regex, row.Exclude, row.Help)
 			}
 		}
 		metricQuery.WillReturnRows(res)
@@ -154,8 +154,8 @@ func TestPutScan(t *testing.T) {
 			Path:         "/tmp/test.log",
 			LastModified: pgtype.Timestamp{Time: time.Now()},
 			Patterns: []Pattern{
-				{"cdc", "cdc", "cdc events"},
-				{"kv", "kv", "kv events"},
+				{"cdc", "cdc", "", "cdc events"},
+				{"kv", "kv", "exclude", "kv events"},
 			},
 			Name: "with_patterns",
 		}, false},
@@ -172,8 +172,8 @@ func TestPutScan(t *testing.T) {
 			WithArgs(tt.scan.Name, tt.scan.Path, tt.scan.Format, tt.scan.Enabled).
 			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
 		for _, pattern := range tt.scan.Patterns {
-			mock.ExpectExec(`INSERT INTO _visus.pattern \(scan,metric,regex,help\) VALUES .+`).
-				WithArgs(tt.scan.Name, pattern.Name, pattern.Regex, pattern.Help).
+			mock.ExpectExec(`INSERT INTO _visus.pattern \(scan,metric,regex,exclude,help\) VALUES .+`).
+				WithArgs(tt.scan.Name, pattern.Name, pattern.Regex, pattern.Exclude, pattern.Help).
 				WillReturnResult(pgxmock.NewResult("INSERT", 1))
 		}
 		mock.ExpectCommit()

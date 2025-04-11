@@ -23,9 +23,10 @@ import (
 
 // patternDef yaml pattern definition
 type patternDef struct {
-	Help  string
-	Name  string
-	Regex string
+	Help    string
+	Name    string
+	Exclude string
+	Regex   string
 }
 
 // config yaml scan definition
@@ -41,9 +42,10 @@ func marshal(logFile *store.Scan) ([]byte, error) {
 	patterns := make([]patternDef, 0)
 	for _, m := range logFile.Patterns {
 		metric := patternDef{
-			Help:  m.Help,
-			Name:  m.Name,
-			Regex: m.Regex,
+			Help:    m.Help,
+			Name:    m.Name,
+			Exclude: m.Exclude,
+			Regex:   m.Regex,
 		}
 		patterns = append(patterns, metric)
 	}
@@ -69,9 +71,10 @@ func unmarshal(data []byte) (*store.Scan, error) {
 	patterns := make([]store.Pattern, 0)
 	for _, p := range config.Patterns {
 		pattern := store.Pattern{
-			Name:  p.Name,
-			Regex: p.Regex,
-			Help:  p.Help,
+			Name:    p.Name,
+			Exclude: p.Exclude,
+			Regex:   p.Regex,
+			Help:    p.Help,
 		}
 		patterns = append(patterns, pattern)
 	}
