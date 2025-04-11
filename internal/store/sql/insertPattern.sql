@@ -15,6 +15,6 @@
 -- SPDX-License-Identifier: Apache-2.0
 
 INSERT INTO _visus.pattern
-   (scan,metric,regex,help)
+   (scan,metric,regex,exclude,help)
 VALUES
-   ($1,$2,$3,$4);
+   ($1,$2,$3,$4,$5);

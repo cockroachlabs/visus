@@ -48,6 +48,9 @@ var authExpected string
 //go:embed testdata/regex.txt
 var regexExpected string
 
+//go:embed testdata/exclude.txt
+var excludeExpected string
+
 //go:embed testdata/max.txt
 var maxExpected string
 
@@ -97,6 +100,26 @@ func TestScanner(t *testing.T) {
 			},
 			map[string]string{
 				"crdb_size": regexExpected,
+			},
+		},
+		{
+			"exclude",
+			&store.Scan{
+				Enabled: true,
+				Format:  store.CRDBv2,
+				Name:    "crdb",
+				Path:    "./testdata/sample.log",
+				Patterns: []store.Pattern{
+					{
+						Name:    "exclude",
+						Exclude: "max",
+						Regex:   "size",
+						Help:    "size events",
+					},
+				},
+			},
+			map[string]string{
+				"crdb_exclude": excludeExpected,
 			},
 		},
 		{

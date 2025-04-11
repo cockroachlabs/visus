@@ -176,8 +176,9 @@ $VISUS_USER start --bind-addr :8888 --insecure --endpoint "/_status/custom"
 
 Visus can also be used to scan cockroachdb log files: it will produce metrics
 for the events in the logs, adding labels for the level and the source of the
-event. For instance to collect all the events in the cockroack.log file, define
-a scan configuration `log.yaml` as follows:
+event. For instance to collect all the events related to jobs entries in the cockroack.log file,
+excluding the stack traces (lines that contain  `\] \d+ \+`), 
+define a scan configuration `log.yaml` as follows:
 
 ```yaml
 name: cockroach_log
@@ -185,9 +186,10 @@ enabled: true
 format: crdb-v2
 path: /var/log/cockroach.log
 patterns:
-  - name : events
-    regex:
+  - name : jobs
+    regex: jobs 
     help : number of events
+    exclude: \] \d+ \+
 ```
 
 Insert the scan configuration in the database:
@@ -199,14 +201,11 @@ $VISUS_ADMIN  scan put --yaml - < log.yaml
 Example of the metrics produced:
 
 ```text
-# HELP cockroach_log_events number of events
-# TYPE cockroach_log_events counter
-cockroach_log_events{level="I",source="cli/log_flags.go"} 6
-cockroach_log_events{level="I",source="cli/start.go"} 102
-cockroach_log_events{level="I",source="gossip/client.go"} 9
-cockroach_log_events{level="I",source="gossip/gossip.go"} 6
-cockroach_log_events{level="I",source="jobs/job_scheduler.go"} 3
-cockroach_log_events{level="I",source="jobs/registry.go"} 12
+# HELP cockroach_log_jobs number of events
+# TYPE cockroach_log_jobs counter
+cockroach_log_jobs{level="E",source="jobs/registry.go"} 1
+cockroach_log_jobs{level="I",source="jobs/registry.go"} 1
+cockroach_log_jobs{level="I",source="jobs/structured_log.go"} 1
 ```
 
 ## Scanning auth logs

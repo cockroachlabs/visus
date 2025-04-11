@@ -37,9 +37,10 @@ const (
 
 // A Pattern defines the regular expression to match to increase the pattern counter
 type Pattern struct {
-	Help  string // Help to used to describe the pattern.
-	Name  string // Name of the pattern, which represents the property being measured.
-	Regex string // Kind is the type of the pattern.
+	Help    string // Help to used to describe the pattern.
+	Name    string // Name of the pattern, which represents the property being measured.
+	Exclude string // Regex for excluding lines.
+	Regex   string // Regex to match.
 }
 
 // Scan defines the list of patterns that used to scan a log file.
@@ -144,7 +145,7 @@ func (s *store) GetScanPatterns(ctx context.Context, name string) ([]Pattern, er
 	defer rows.Close()
 	for rows.Next() {
 		pattern := Pattern{}
-		err := rows.Scan(&pattern.Name, &pattern.Regex, &pattern.Help)
+		err := rows.Scan(&pattern.Name, &pattern.Regex, &pattern.Exclude, &pattern.Help)
 		if err != nil {
 			return nil, errors.WithStack(err)
 		}
@@ -177,7 +178,7 @@ func (s *store) PutScan(ctx context.Context, target *Scan) error {
 	}
 	for _, pattern := range target.Patterns {
 		_, err = txn.Exec(ctx, insertPatternStmt, target.Name, pattern.Name,
-			pattern.Regex, pattern.Help)
+			pattern.Regex, pattern.Exclude, pattern.Help)
 		if err != nil {
 			return errors.WithStack(err)
 		}
