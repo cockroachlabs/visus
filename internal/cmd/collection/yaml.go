@@ -38,6 +38,7 @@ type config struct {
 	Frequency  int
 	MaxResults int
 	Enabled    bool
+	Databases  string
 	Query      string
 	Labels     []string
 	Metrics    []metricDef
@@ -59,6 +60,7 @@ func marshal(collection *store.Collection) ([]byte, error) {
 		Frequency:  int(collection.Frequency.Microseconds / microsecondsPerSecond),
 		MaxResults: collection.MaxResult,
 		Enabled:    collection.Enabled,
+		Databases:  collection.Databases,
 		Query:      collection.Query,
 		Labels:     collection.Labels,
 		Metrics:    metrics,
@@ -108,8 +110,9 @@ func unmarshal(data []byte) (*store.Collection, error) {
 			Valid:        true,
 			Microseconds: int64(config.Frequency) * microsecondsPerSecond,
 		},
-		Query:   config.Query,
-		Labels:  config.Labels,
-		Metrics: metrics,
+		Databases: config.Databases,
+		Query:     config.Query,
+		Labels:    config.Labels,
+		Metrics:   metrics,
 	}, nil
 }

@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/pashagolub/pgxmock/v3"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -27,18 +29,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func testVerify(t *testing.T, expected map[string][]string) {
+func testFormatLabels(labels []*dto.LabelPair) string {
+	b := strings.Builder{}
+	for idx, label := range labels {
+		if idx > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(*label.Name)
+		b.WriteString(":")
+		b.WriteString(*label.Value)
+	}
+	return b.String()
+}
+
+func testVerify(t *testing.T, prefix string, expected map[string][]string) {
 	gathering, err := prometheus.DefaultGatherer.Gather()
 	require.NoError(t, err)
 	for _, mf := range gathering {
-		if strings.HasPrefix(*mf.Name, "crdb") {
+		if strings.HasPrefix(*mf.Name, prefix) {
 			results := make([]string, 0)
 			for _, m := range mf.GetMetric() {
 				switch *mf.Type {
 				case dto.MetricType_COUNTER:
-					results = append(results, fmt.Sprintf("%s %s %f", m.GetLabel()[0].GetName(), m.GetLabel()[0].GetValue(), m.GetCounter().GetValue()))
+					results = append(results, fmt.Sprintf("%s %f", testFormatLabels(m.GetLabel()), m.GetCounter().GetValue()))
 				case dto.MetricType_GAUGE:
-					results = append(results, fmt.Sprintf("%s %s %f", m.GetLabel()[0].GetName(), m.GetLabel()[0].GetValue(), m.GetGauge().GetValue()))
+					results = append(results, fmt.Sprintf("%s %f", testFormatLabels(m.GetLabel()), m.GetGauge().GetValue()))
 				}
 			}
 			assert.Equal(t, expected[*mf.Name], results)
@@ -48,8 +63,8 @@ func testVerify(t *testing.T, expected map[string][]string) {
 
 type sample struct {
 	label   string
-	gauge   float64
 	counter float64
+	gauge   float64
 }
 type test struct {
 	name     string
@@ -65,11 +80,32 @@ func assertions(t *testing.T) (*assert.Assertions, *require.Assertions) {
 }
 
 func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, rows []sample) {
-	columns := []string{"label", "gauge", "counter"}
+	mock.ExpectBeginTx(pgx.TxOptions{})
+	columns := []string{"label", "counter", "gauge"}
 	query := mock.ExpectQuery("SELECT label, counter, gauge from test limit .+").WithArgs(maxResults)
 	res := mock.NewRows(columns)
 	for _, row := range rows {
-		res.AddRow(row.label, row.gauge, row.counter)
+		res.AddRow(row.label, row.counter, row.gauge)
+	}
+	query.WillReturnRows(res)
+	err := collector.Collect(context.Background(), mock)
+	require.NoError(t, err)
+}
+
+func testDatabaseCollect(
+	t *testing.T, collector Collector, mock pgxmock.PgxConnIface, rows []sample,
+) {
+	databases := mock.ExpectQuery("SELECT 'mydb'")
+	dbres := mock.NewRows([]string{"database"})
+	dbres.AddRow("mydb")
+	databases.WillReturnRows(dbres)
+	mock.ExpectBeginTx(pgx.TxOptions{})
+	mock.ExpectExec("USE .+").WithArgs("mydb").WillReturnResult(pgconn.NewCommandTag("SET"))
+	columns := []string{"label", "counter", "gauge"}
+	query := mock.ExpectQuery("SELECT label, counter, gauge from test limit .+").WithArgs(maxResults)
+	res := mock.NewRows(columns)
+	for _, row := range rows {
+		res.AddRow(row.label, row.counter, row.gauge)
 	}
 	query.WillReturnRows(res)
 	err := collector.Collect(context.Background(), mock)
@@ -82,7 +118,7 @@ func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, r
 // to specify the limit on the number results to be returned. The columns must contain the labels specified.
 // The format of the query:
 // (SELECT label1,label2, ..., metric1,metric2,... FROM ... WHERE ... LIMIT $1)
-func newCollector(name string, labels []string, query string) Collector {
+func newCollector(name string, labels []string, databases string, query string) Collector {
 	labelMap := make(map[string]int)
 	for i, l := range labels {
 		labelMap[l] = i
@@ -96,19 +132,26 @@ func newCollector(name string, labels []string, query string) Collector {
 		maxResults: 100,
 		metrics:    make(map[string]metric),
 		name:       name,
+		databases:  databases,
 		query:      query,
 		registerer: prometheus.DefaultRegisterer,
 	}
 }
-func TestCollector_Collect(t *testing.T) {
+func TestCollect(t *testing.T) {
 	a, r := assertions(t)
 	mock, err := pgxmock.NewConn()
 	r.NoError(err)
-	coll := newCollector("test", []string{"label"}, "SELECT label, counter, gauge from test limit $1").
+	counter := "counter"
+	gauge := "gauge"
+	prefix := "collect"
+	counterMetricName := strings.Join([]string{prefix, counter}, "_")
+	gaugeMetricName := strings.Join([]string{prefix, gauge}, "_")
+	coll := newCollector(prefix, []string{"label"}, "",
+		"SELECT label, counter, gauge from test limit $1").
 		WithMaxResults(maxResults)
-	err = coll.AddCounter("counter", "counter")
+	err = coll.AddCounter(counter, counter)
 	r.NoError(err)
-	err = coll.AddGauge("gauge", "gauge")
+	err = coll.AddGauge(gauge, gauge)
 	r.NoError(err)
 	collector := coll.(*collector)
 	collector.maybeInitCache()
@@ -122,8 +165,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test2", 1, 5},
 			},
 			map[string][]string{
-				"counter": {"label test1 1.000000", "label test2 1.000000"},
-				"gauge":   {"label test1 1.000000", "label test2 5.000000"},
+				counterMetricName: {"label:test1 1.000000", "label:test2 1.000000"},
+				gaugeMetricName:   {"label:test1 1.000000", "label:test2 5.000000"},
 			},
 			4,
 		},
@@ -134,8 +177,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test2", 1, 1},
 			},
 			map[string][]string{
-				"counter": {"label test1 1.000000", "label test2 1.000000"},
-				"gauge":   {"label test1 3.000000", "label test2 1.000000"},
+				counterMetricName: {"label:test1 1.000000", "label:test2 1.000000"},
+				gaugeMetricName:   {"label:test1 3.000000", "label:test2 1.000000"},
 			},
 			4,
 		},
@@ -146,8 +189,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test2", 2, 1},
 			},
 			map[string][]string{
-				"counter": {"label test1 4.000000", "label test2 2.000000"},
-				"gauge":   {"label test1 1.000000", "label test2 1.000000"},
+				counterMetricName: {"label:test1 4.000000", "label:test2 2.000000"},
+				gaugeMetricName:   {"label:test1 1.000000", "label:test2 1.000000"},
 			},
 			4,
 		},
@@ -158,8 +201,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test3", 2, 1},
 			},
 			map[string][]string{
-				"counter": {"label test1 6.000000", "label test2 2.000000", "label test3 2.000000"},
-				"gauge":   {"label test1 1.000000", "label test2 1.000000", "label test3 1.000000"},
+				counterMetricName: {"label:test1 6.000000", "label:test2 2.000000", "label:test3 2.000000"},
+				gaugeMetricName:   {"label:test1 1.000000", "label:test3 1.000000"},
 			},
 			6,
 		},
@@ -170,8 +213,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test4", 2, 1},
 			},
 			map[string][]string{
-				"counter": {"label test1 6.000000", "label test2 2.000000", "label test3 2.000000", "label test4 2.000000"},
-				"gauge":   {"label test1 1.000000", "label test2 1.000000", "label test3 1.000000", "label test4 1.000000"},
+				counterMetricName: {"label:test1 6.000000", "label:test2 2.000000", "label:test3 2.000000", "label:test4 2.000000"},
+				gaugeMetricName:   {"label:test1 1.000000", "label:test4 1.000000"},
 			},
 			8,
 		},
@@ -182,8 +225,8 @@ func TestCollector_Collect(t *testing.T) {
 				{"test5", 2, 1},
 			},
 			map[string][]string{
-				"counter": {"label test1 6.000000", "label test3 2.000000", "label test4 2.000000", "label test5 2.000000"},
-				"gauge":   {"label test1 1.000000", "label test3 1.000000", "label test4 1.000000", "label test5 1.000000"},
+				counterMetricName: {"label:test1 6.000000", "label:test3 2.000000", "label:test4 2.000000", "label:test5 2.000000"},
+				gaugeMetricName:   {"label:test1 1.000000", "label:test5 1.000000"},
 			},
 			8,
 		},
@@ -191,16 +234,121 @@ func TestCollector_Collect(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testCollect(t, collector, mock, tt.samples)
-			testVerify(t, tt.expected)
+			testVerify(t, prefix, tt.expected)
 			a.Equal(tt.cacheLen, collector.metricsCache.Len())
 		})
 	}
 }
 
-func Test_collector_AddCounter(t *testing.T) {
+func TestDatabaseCollect(t *testing.T) {
 	a, r := assertions(t)
-	collName := "test"
-	coll := newCollector(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
+	mock, err := pgxmock.NewConn()
+	r.NoError(err)
+	counter := "counter"
+	gauge := "gauge"
+	prefix := "dbcollect"
+	counterMetricName := strings.Join([]string{prefix, counter}, "_")
+	gaugeMetricName := strings.Join([]string{prefix, gauge}, "_")
+	coll := newCollector("testdb", []string{"label"},
+		"SELECT 'mydb'",
+		"SELECT label, counter, gauge from test limit $1").
+		WithMaxResults(maxResults)
+	err = coll.AddCounter(counter, counter)
+	r.NoError(err)
+	err = coll.AddGauge(gauge, gauge)
+	r.NoError(err)
+	collector := coll.(*collector)
+	collector.maybeInitCache()
+	r.Equal(8, collector.metricsCache.MaxEntries)
+	r.Equal(0, collector.metricsCache.Len())
+	tests := []test{
+		{
+			"one",
+			[]sample{
+				{"test1", 1, 1},
+				{"test2", 1, 5},
+			},
+			map[string][]string{
+				counterMetricName: {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
+				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 5.000000"},
+			},
+			4,
+		},
+		{
+			"two",
+			[]sample{
+				{"test1", 1, 3},
+				{"test2", 1, 1},
+			},
+			map[string][]string{
+				counterMetricName: {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
+				gaugeMetricName:   {"_database:mydb,label:test1 3.000000", "_database:mydb,label:test2 1.000000"},
+			},
+			4,
+		},
+		{
+			"three",
+			[]sample{
+				{"test1", 4, 1},
+				{"test2", 2, 1},
+			},
+			map[string][]string{
+				counterMetricName: {"_database:mydb,label:test1 4.000000", "_database:mydb,label:test2 2.000000"},
+				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
+			},
+			4,
+		},
+		{
+			"four_counter_reset",
+			[]sample{
+				{"test1", 2, 1},
+				{"test3", 2, 1},
+			},
+			map[string][]string{
+				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test2 2.000000", "_database:mydb,label:test3 2.000000"},
+				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test3 1.000000"},
+			},
+			6,
+		},
+		{
+			"five",
+			[]sample{
+				{"test1", 2, 1},
+				{"test4", 2, 1},
+			},
+			map[string][]string{
+				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test2 2.000000", "_database:mydb,label:test3 2.000000", "_database:mydb,label:test4 2.000000"},
+				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test4 1.000000"},
+			},
+			8,
+		},
+		{
+			"six_test2_evicted",
+			[]sample{
+				{"test1", 2, 1},
+				{"test5", 2, 1},
+			},
+			map[string][]string{
+				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test3 2.000000", "_database:mydb,label:test4 2.000000", "_database:mydb,label:test5 2.000000"},
+				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test5 1.000000"},
+			},
+			8,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			testDatabaseCollect(t, collector, mock, tt.samples)
+			testVerify(t, prefix, tt.expected)
+			a.Equal(tt.cacheLen, collector.metricsCache.Len())
+		})
+	}
+}
+
+func TestAddCounter(t *testing.T) {
+	a, r := assertions(t)
+	collName := "counter"
+	coll := newCollector(collName, []string{"label"}, "",
+		"SELECT label, counter, gauge from test limit $1").(*collector)
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
@@ -251,10 +399,11 @@ func Test_collector_AddCounter(t *testing.T) {
 	a.Error(err)
 }
 
-func Test_collector_AddGauge(t *testing.T) {
+func TestAddGauge(t *testing.T) {
 	a, r := assertions(t)
-	collName := "test"
-	coll := newCollector(collName, []string{"label"}, "SELECT label, counter, gauge from test limit $1").(*collector)
+	collName := "gauge"
+	coll := newCollector(collName, []string{"label"}, "",
+		"SELECT label, counter, gauge from test limit $1").(*collector)
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 

@@ -172,7 +172,9 @@ var _ database.Connection = &mockDB{}
 
 // Begin implements database.Connection.
 func (m *mockDB) Begin(ctx context.Context) (pgx.Tx, error) {
-	panic("unimplemented")
+	return &mockTx{
+		db: m,
+	}, nil
 }
 
 // Exec implements database.Connection.
@@ -206,5 +208,72 @@ func (m *mockDB) Query(ctx context.Context, sql string, args ...interface{}) (pg
 
 // QueryRow implements database.Connection.
 func (m *mockDB) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	panic("unimplemented")
+}
+
+type mockTx struct {
+	db *mockDB
+}
+
+var _ pgx.Tx = &mockTx{}
+
+// Begin implements pgx.Tx.
+func (m *mockTx) Begin(ctx context.Context) (pgx.Tx, error) {
+	panic("unimplemented")
+}
+
+// Commit implements pgx.Tx.
+func (m *mockTx) Commit(ctx context.Context) error {
+	return nil
+}
+
+// Conn implements pgx.Tx.
+func (m *mockTx) Conn() *pgx.Conn {
+	panic("unimplemented")
+}
+
+// CopyFrom implements pgx.Tx.
+func (m *mockTx) CopyFrom(
+	ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource,
+) (int64, error) {
+	panic("unimplemented")
+}
+
+// Exec implements pgx.Tx.
+func (m *mockTx) Exec(
+	ctx context.Context, sql string, args ...any,
+) (commandTag pgconn.CommandTag, err error) {
+	return m.db.Exec(ctx, sql, args...)
+}
+
+// LargeObjects implements pgx.Tx.
+func (m *mockTx) LargeObjects() pgx.LargeObjects {
+	panic("unimplemented")
+}
+
+// Prepare implements pgx.Tx.
+func (m *mockTx) Prepare(
+	ctx context.Context, name string, sql string,
+) (*pgconn.StatementDescription, error) {
+	panic("unimplemented")
+}
+
+// Query implements pgx.Tx.
+func (m *mockTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
+	return m.db.Query(ctx, sql, args...)
+}
+
+// QueryRow implements pgx.Tx.
+func (m *mockTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
+	return m.db.QueryRow(ctx, sql, args...)
+}
+
+// Rollback implements pgx.Tx.
+func (m *mockTx) Rollback(ctx context.Context) error {
+	return nil
+}
+
+// SendBatch implements pgx.Tx.
+func (m *mockTx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
 	panic("unimplemented")
 }

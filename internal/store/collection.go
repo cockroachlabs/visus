@@ -56,6 +56,7 @@ type Metric struct {
 // Collection is a set of metrics that evaluated at the same time.
 // This struct defines the configuration for the collection.
 type Collection struct {
+	Databases    string           // SQL Query that returns a list of databases to scope the query.
 	Enabled      bool             // Enabled is true if the metrics needs to be collected.
 	Frequency    pgtype.Interval  // Frequency determines how often the metrics are collected.
 	Labels       []string         // Labels provide dimensions to the metrics.
@@ -137,7 +138,7 @@ func (s *store) GetCollection(ctx context.Context, name string) (*Collection, er
 	if err := collRow.Scan(
 		&collection.Name, &collection.LastModified,
 		&collection.Enabled, &collection.Scope, &collection.MaxResult,
-		&collection.Frequency, &collection.Query, &collection.Labels); err != nil {
+		&collection.Frequency, &collection.Databases, &collection.Query, &collection.Labels); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil
 		}
@@ -188,7 +189,7 @@ func (s *store) PutCollection(ctx context.Context, collection *Collection) error
 	}
 	_, err = txn.Exec(ctx, upsertCollectionStmt,
 		collection.Name, collection.Enabled, collection.Scope, collection.MaxResult,
-		collection.Frequency, collection.Query, collection.Labels)
+		collection.Frequency, collection.Databases, collection.Query, collection.Labels)
 	if err != nil {
 		return errors.WithStack(err)
 	}
@@ -208,11 +209,12 @@ func (c *Collection) String() string {
 Enabled:    %t
 Updated:    %s
 Labels:     %s
+Databases:      %s
 Query:      %s
 MaxResults: %d
 Frequency:  %d seconds
 Metrics:    %v`,
 		c.Name, c.Enabled, c.LastModified.Time, strings.Join(c.Labels, ","),
-		c.Query, c.MaxResult,
+		c.Databases, c.Query, c.MaxResult,
 		c.Frequency.Microseconds/(1000*1000), c.Metrics)
 }

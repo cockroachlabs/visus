@@ -92,4 +92,6 @@ CREATE TABLE IF NOT EXISTS _visus.pattern (
 GRANT SELECT ON TABLE _visus.scan TO visus;
 GRANT SELECT ON TABLE _visus.pattern TO visus;
 
+
 ALTER TABLE _visus.pattern ADD COLUMN IF NOT EXISTS exclude STRING DEFAULT '';
+ALTER TABLE _visus.collection ADD COLUMN IF NOT EXISTS databases STRING DEFAULT '';
