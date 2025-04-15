@@ -21,6 +21,7 @@ import (
 	"net/http"
 	_ "net/http/pprof" // enabling debugging
 	"net/url"
+	"runtime/debug"
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
@@ -33,6 +34,10 @@ import (
 	"github.com/prometheus/common/expfmt"
 	log "github.com/sirupsen/logrus"
 )
+
+// Version of the visus binary, set using:
+// `-ldflags="-X github.com/cockroachlabs/visus/internal/http.Version=..."`
+var Version string
 
 type serverImpl struct {
 	clientTLSConfig *clientTLSConfig
@@ -143,7 +148,7 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 	})
 
 	http.Handle(s.config.Endpoint, gziphandler.GzipHandler(handler))
-
+	s.debugInfo()
 	ctx.Go(func(ctx *stopper.Context) error {
 		var err error
 		if !s.config.Insecure {
@@ -181,6 +186,37 @@ func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error)
 	if newErr != nil {
 		log.Errorf("Error sending response to client %s", err)
 	}
+}
+
+func (s *serverImpl) debugInfo() {
+	if bi, ok := debug.ReadBuildInfo(); ok {
+		labels := prometheus.Labels{
+			"go_version": bi.GoVersion,
+			"module":     bi.Path,
+		}
+		for _, setting := range bi.Settings {
+			switch setting.Key {
+			case "vcs.revision":
+				labels["commit"] = setting.Value
+			case "vcs.time":
+				labels["build_time"] = setting.Value
+			}
+		}
+		labels["version"] = Version
+		g := prometheus.NewGauge(prometheus.GaugeOpts{
+			Name:        "visus_info",
+			Help:        "information about the visus binary",
+			ConstLabels: labels,
+		})
+		g.Set(1)
+		s.registry.Register(g)
+	}
+	g := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "visus_start_seconds",
+		Help: "the wall time at which visus was started",
+	})
+	g.SetToCurrentTime()
+	s.registry.Register(g)
 }
 
 // refresh the server configuration

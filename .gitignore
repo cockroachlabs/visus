@@ -15,7 +15,6 @@
 # vendor/
 scripts/
 tmp/
-*.sh
 certs
 visus
 visus-*
