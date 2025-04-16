@@ -45,16 +45,16 @@ go run golang.org/x/lint/golint -set_exit_status ./...
 go run honnef.co/go/tools/cmd/staticcheck -checks all ./...
 
 VERSION="github.com/cockroachlabs/visus/internal/http.Version=$version"
-GOOS=linux go build -v  -ldflags="-X '$VERSION'" -o visus
+GOOS=linux GOARCH=amd64 go build -v  -ldflags="-X '$VERSION'" -o visus
 
-tar cvfz $amdfile  visus  examples
+tar -cvz --no-xattrs -f $amdfile  visus  examples
 
-shasum -a 256 $amdfile
 GOOS=linux GOARCH=arm64 go build -v  -ldflags="-X '$VERSION'" -o visus
 
-tar cvfz $armfile visus  examples
-shasum -a 256 $armfile
+tar -cvz --no-xattrs -f $armfile visus  examples
 
 go build -ldflags="-X '$VERSION'" -o visus
 
 echo "Upload binaries $amdfile and  $armfile to release"
+shasum -a 256 $armfile
+shasum -a 256 $amdfile
