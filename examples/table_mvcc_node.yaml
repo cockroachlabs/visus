@@ -1,0 +1,84 @@
+# Copyright 2025 The Cockroach Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# This query samples local ranges in a node.
+# It chooses ranges that have a replica that shows up as the first replica
+# in the crdb_internal.ranges_no_leases.
+# If the cluster has many ranges (>100K) consider reducing the frequency.
+# The amount of non-live data typically increases slowly, so sampling
+# every few minutes should be acceptable.
+# This query uses internal tables that might change with newer versions.
+# Tested with CRDB v24.2 -> 25.2.
+
+name: table_mvcc_node
+enabled: true
+scope: node
+frequency: 60
+maxresults: 50
+labels: [database, table]
+metrics:
+  - name : total_bytes
+    kind : gauge
+    help : total_bytes in all tables.
+  - name : garbage_percent
+    kind : gauge
+    help : garbage_percent.  
+query: 
+  WITH tableinfo AS (
+  SELECT
+        range_id,
+        (
+            CASE
+                WHEN strpos(substring(start_pretty, 8), '/') > 0
+                THEN substring(start_pretty, 8, strpos(substring(start_pretty, 8), '/') - 1)
+                ELSE substring(start_pretty, 8)
+                END
+        )::INT8 AS tableid,
+        (
+            (crdb_internal.range_stats(start_key)->>'key_bytes')::INT8 +
+            (crdb_internal.range_stats(start_key)->>'val_bytes')::INT8
+        ) AS total_bytes,
+        (
+            (crdb_internal.range_stats(start_key)->'live_bytes')::INT8
+        ) AS live_bytes
+    FROM
+                crdb_internal.ranges_no_leases
+    WHERE
+                start_pretty::STRING LIKE '/Table/%' AND replicas[1] in (SELECT node_id::INT FROM [SHOW node_id])
+  ),
+  result AS (
+  SELECT
+          SUM(total_bytes) as total_bytes,
+          (100 * (SUM(total_bytes)-SUM(live_bytes)) / SUM(total_bytes))::DECIMAL(5,2) AS garbage_percent,
+          dbs.name AS database,
+          tbs.name AS table
+  FROM
+          system.namespace AS tbs,
+          system.namespace AS dbs,
+          tableinfo
+  WHERE
+          tableinfo.tableid = tbs.id
+          AND tbs."parentID" = dbs.id
+          AND tableinfo.total_bytes > 0
+  GROUP BY
+          tbs.name, dbs.name
+  )
+  SELECT "database", "table", total_bytes, garbage_percent
+  FROM result
+  WHERE garbage_percent > 0 AND  total_bytes > POWER(1024,2) AND "database" != 'system'
+  ORDER BY
+          garbage_percent DESC
+  LIMIT $1;
