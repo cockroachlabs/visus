@@ -111,6 +111,7 @@ func (s *serverImpl) Refresh(ctx *stopper.Context) error {
 	err := s.refresh(ctx)
 	if err != nil {
 		server.RefreshErrors.WithLabelValues("http_server").Inc()
+		return err
 	}
 	server.RefreshCounts.WithLabelValues("http_server").Inc()
 	return nil

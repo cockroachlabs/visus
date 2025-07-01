@@ -116,6 +116,7 @@ func (s *serverImpl) Refresh(ctx *stopper.Context) error {
 	err := s.refresh(ctx)
 	if err != nil {
 		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
+		return err
 	}
 	server.RefreshCounts.WithLabelValues("metric_collector").Inc()
 	return nil
