@@ -62,6 +62,7 @@ func (s *scannerServer) Refresh(ctx *stopper.Context) error {
 	err := s.refresh(ctx)
 	if err != nil {
 		server.RefreshErrors.WithLabelValues("scanners").Inc()
+		return err
 	}
 	server.RefreshCounts.WithLabelValues("scanners").Inc()
 	return nil
