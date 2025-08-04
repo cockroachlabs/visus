@@ -428,8 +428,8 @@ github.com/cncf/xds/go v0.0.0-20220314180256-7f1daf1720fc/go.mod h1:eXthEFrGJvWH
 github.com/cncf/xds/go v0.0.0-20230105202645-06c439db220b/go.mod h1:eXthEFrGJvWHgFFCl3hGmgk+/aYT6PnTQLykKQRLhEs=
 github.com/cockroachdb/crlfmt v0.3.0 h1:IaPIlidTHn7s493ozBcpnkF/HNzCNe7aBJmUMqgIlOk=
 github.com/cockroachdb/crlfmt v0.3.0/go.mod h1:iRZvVcb8vDQK4dh64mPRZBucM85Xd/VLTE0cmO95/Kk=
-github.com/cockroachdb/field-eng-powertools v0.1.1 h1:xF8Rb8c9oD55W0BE3yIDWYmF1U2RcV3BJ+pzNEKVpLQ=
-github.com/cockroachdb/field-eng-powertools v0.1.1/go.mod h1:qAoRYmqNSHeI44wOoW4LvXnzRySbB2ocTXpd22OQ5aA=
+github.com/cockroachdb/field-eng-powertools v0.1.2 h1:eW8mMXmzSKnZz0uoAsTwvjmANt9nK3a+W+AlzGx3ivQ=
+github.com/cockroachdb/field-eng-powertools v0.1.2/go.mod h1:ed0sleWZc8i9M2TrpJ+NiMwKCc39r+U2+FRBdlPXfwQ=
 github.com/cockroachdb/gostdlib v1.19.0 h1:cSISxkVnTlWhTkyple/T6NXzOi5659FkhxvUgZv+Eb0=
 github.com/cockroachdb/gostdlib v1.19.0/go.mod h1:+dqqpARXbE/gRDEhCak6dm0l14AaTymPZUKMfURjBtY=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
