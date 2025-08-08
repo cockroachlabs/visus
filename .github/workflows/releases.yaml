@@ -1,0 +1,59 @@
+# Copyright 2025 Cockroach Labs, Inc.
+#
+# All rights reserved.
+
+
+name: Releases
+on:
+  release:
+    types:
+      - created
+
+jobs:
+  build:
+    uses: ./.github/workflows/binaries.yaml
+  upload-asset:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visus-linux-amd64.zip
+      - name: Upload asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: visus-linux-amd64.zip
+          asset_name: visus-${{ github.event.release.tag_name }}-linux-amd64.zip
+          asset_content_type: binary/octet-stream
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visus-linux-arm64.zip
+      - name: Upload asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: visus-linux-arm64.zip
+          asset_name: visus-${{ github.event.release.tag_name }}-linux-arm64.zip
+          asset_content_type: binary/octet-stream
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visus-darwin-arm64.zip
+      - name: Upload asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: visus-darwin-arm64.zip
+          asset_name: visus-${{ github.event.release.tag_name }}-darwin-arm64.zip
+          asset_content_type: binary/octet-stream
