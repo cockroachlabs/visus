@@ -70,7 +70,7 @@ func deleteCmd(env *env.Env) *cobra.Command {
 				return err
 			}
 			if err := store.DeleteCollection(ctx, collection); err != nil {
-				return errors.Wrapf(err, "unable to delete scan %s", collection)
+				return errors.Wrapf(err, "unable to delete collection %s", collection)
 			}
 			cmd.Printf("Collection %s deleted.\n", collection)
 			return nil
