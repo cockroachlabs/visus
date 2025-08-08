@@ -25,6 +25,7 @@ on:
       - 'go.mod'
       - 'go.sum'
       - '**/*.go'
+  workflow_call:
   workflow_dispatch:
     inputs:
       build_binaries:
