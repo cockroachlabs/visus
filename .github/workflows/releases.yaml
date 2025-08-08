@@ -1,0 +1,71 @@
+# Copyright 2025 The Cockroach Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+
+name: Releases
+on:
+  release:
+    types:
+      - created
+
+jobs:
+  build:
+    uses: ./.github/workflows/binaries.yaml
+  upload-asset:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visus-linux-amd64.zip
+      - name: Upload asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: visus-linux-amd64.zip
+          asset_name: visus-${{ github.event.release.tag_name }}-linux-amd64.zip
+          asset_content_type: binary/octet-stream
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visus-linux-arm64.zip
+      - name: Upload asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: visus-linux-arm64.zip
+          asset_name: visus-${{ github.event.release.tag_name }}-linux-arm64.zip
+          asset_content_type: binary/octet-stream
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: visus-darwin-arm64.zip
+      - name: Upload asset
+        uses: actions/upload-release-asset@v1.0.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: visus-darwin-arm64.zip
+          asset_name: visus-${{ github.event.release.tag_name }}-darwin-arm64.zip
+          asset_content_type: binary/octet-stream
