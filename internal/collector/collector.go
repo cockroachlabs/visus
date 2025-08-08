@@ -258,7 +258,10 @@ func (c *collector) String() string {
 }
 func (c *collector) Unregister() {
 	for _, metric := range c.metrics {
-		prometheus.Unregister(metric.vec)
+		if !c.registerer.Unregister(metric.vec) {
+			log.Errorf("failed to unregister %s", metric.name)
+		}
+		log.Tracef("unregistering %s", metric.name)
 	}
 }
 

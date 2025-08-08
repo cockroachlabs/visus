@@ -452,4 +452,77 @@ func TestAddGauge(t *testing.T) {
 	help = "help counter changed"
 	err = coll.AddGauge(name, help)
 	a.Error(err)
+
+}
+
+func TestGaugeLifeCycle(t *testing.T) {
+	a, r := assertions(t)
+	collName := "lifecycle"
+	coll := newCollector(collName, []string{"label"}, "",
+		"SELECT label, counter, gauge from test limit $1").(*collector)
+	registry := prometheus.NewRegistry()
+	coll.registerer = registry
+
+	name := "gauge"
+	help := "help gauge"
+	err := coll.AddGauge(name, help)
+	r.NoError(err)
+	metric, ok := coll.metrics[name]
+	a.Equal(true, ok)
+	a.Equal(name, metric.name)
+	a.Equal(help, metric.help)
+	a.Equal(Gauge, metric.kind)
+
+	counter, ok := metric.vec.(*prometheus.GaugeVec)
+	r.Equal(true, ok)
+	counter.WithLabelValues("v1").Inc()
+
+	families, err := registry.Gather()
+	r.NoError(err)
+	r.Equal(1, len(families))
+	fam := families[0]
+	r.Equal(collName+"_"+name, *fam.Name)
+	metrics := fam.Metric
+	r.Equal(1, len(metrics))
+
+	coll.Unregister()
+	families, err = registry.Gather()
+	r.NoError(err)
+	r.Equal(0, len(families))
+
+}
+func TestCounterLifeCycle(t *testing.T) {
+	a, r := assertions(t)
+	collName := "lifecycle"
+	coll := newCollector(collName, []string{"label"}, "",
+		"SELECT label, counter, gauge from test limit $1").(*collector)
+	registry := prometheus.NewRegistry()
+	coll.registerer = registry
+
+	name := "counter"
+	help := "help counter"
+	err := coll.AddCounter(name, help)
+	r.NoError(err)
+	metric, ok := coll.metrics[name]
+	a.Equal(true, ok)
+	a.Equal(name, metric.name)
+	a.Equal(help, metric.help)
+	a.Equal(Counter, metric.kind)
+
+	counter, ok := metric.vec.(*prometheus.CounterVec)
+	r.Equal(true, ok)
+	counter.WithLabelValues("v1").Inc()
+
+	families, err := registry.Gather()
+	r.NoError(err)
+	r.Equal(1, len(families))
+	fam := families[0]
+	r.Equal(collName+"_"+name, *fam.Name)
+	metrics := fam.Metric
+	r.Equal(1, len(metrics))
+
+	coll.Unregister()
+	families, err = registry.Gather()
+	r.NoError(err)
+	r.Equal(0, len(families))
 }
