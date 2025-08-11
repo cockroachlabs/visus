@@ -7,7 +7,7 @@ toolchain go1.24.1
 require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/crlfmt v0.3.0
-	github.com/cockroachdb/field-eng-powertools v0.1.2
+	github.com/cockroachdb/field-eng-powertools v0.1.3
 	github.com/creasty/defaults v1.8.0
 	github.com/go-co-op/gocron v1.37.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
@@ -52,7 +52,7 @@ require (
 	go.uber.org/atomic v1.11.0 // indirect
 	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
-	golang.org/x/mod v0.26.0 // indirect
+	golang.org/x/mod v0.27.0 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
 	golang.org/x/text v0.25.0 // indirect
