@@ -55,23 +55,25 @@ type Collector interface {
 
 // collector implementation. To reduce the cardinality of the metrics, it keeps a cache
 // of metrics
+// TODO(silvano): refactor to use a more efficient data structure. Many of these
+// members could be retrieved from the *store.Collection.
 type collector struct {
-	name         string
-	lastModified time.Time
-	cardinality  int
-	enabled      bool
-	frequency    int
-	labels       []string
-	labelMap     map[string]int
-	metrics      map[string]metric
-	databases    string
-	query        string
-	first        bool
-	metricsCache *lru.Cache
-	gauges       map[string]map[string][]string
-	maxResults   int
-	registerer   prometheus.Registerer
-	mu           struct {
+	name                string
+	countersCache       *lru.Cache
+	countersCardinality int
+	databases           string
+	enabled             bool
+	first               bool
+	frequency           int
+	gaugeLabels         map[string]map[string][]string
+	labelMap            map[string]int
+	labels              []string
+	lastModified        time.Time
+	maxResults          int
+	metrics             map[string]metric
+	query               string
+	registerer          prometheus.Registerer
+	mu                  struct {
 		sync.Mutex
 		inUse bool
 	}
@@ -153,7 +155,7 @@ func FromCollection(coll *store.Collection, registerer prometheus.Registerer) (C
 
 // AddCounter adds a metric counter. The name must match one of the columns returned by the query.
 func (c *collector) AddCounter(name string, help string) error {
-	c.cardinality++
+	c.countersCardinality++
 	metricName := c.name + "_" + name
 	vec := prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -179,7 +181,6 @@ func (c *collector) AddCounter(name string, help string) error {
 
 // AddGauge adds a metric gauge. The name must match one of the columns returned by the query.
 func (c *collector) AddGauge(name string, help string) error {
-	c.cardinality++
 	metricName := c.name + "_" + name
 	vec := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
@@ -394,7 +395,7 @@ func (c *collector) counterAdd(
 		return
 	}
 	var delta float64
-	v, ok := c.metricsCache.Get(key)
+	v, ok := c.countersCache.Get(key)
 	if ok {
 		cv, _ := v.(cacheValue)
 		if cv.value > value {
@@ -406,19 +407,14 @@ func (c *collector) counterAdd(
 		delta = value
 	}
 	vec.WithLabelValues(labels...).Add(delta)
-	c.metricsCache.Add(key, cacheValue{labels, value, vec})
+	c.countersCache.Add(key, cacheValue{labels, value, vec})
 }
 
 // gaugeSet sets a gauge value.
 func (c *collector) gaugeSet(
 	vec *prometheus.GaugeVec, name string, labels []string, value float64,
 ) {
-	key, err := c.getKey(name, labels)
-	if err != nil {
-		return
-	}
 	vec.WithLabelValues(labels...).Set(value)
-	c.metricsCache.Add(key, cacheValue{labels, value, vec})
 }
 
 func (c *collector) getAllLabels() []string {
@@ -444,23 +440,23 @@ func (c *collector) getKey(name string, labels []string) (string, error) {
 // clearObsoleteGauges removes the metrics for labels that are no longer present.
 // This is required to prevent obsolete metrics from being reported.
 func (c *collector) clearObsoleteGauges(currGauges map[string]map[string][]string) {
-	for colName, labels := range c.gauges {
+	for gaugeName, labels := range c.gaugeLabels {
 		for id, lbs := range labels {
-			if _, ok := currGauges[colName][id]; ok {
+			if _, ok := currGauges[gaugeName][id]; ok {
 				continue
 			}
-			metric := c.metrics[colName]
+			metric := c.metrics[gaugeName]
 			vec := metric.vec.(*prometheus.GaugeVec)
 			vec.DeleteLabelValues(lbs...)
 		}
 	}
-	c.gauges = currGauges
+	c.gaugeLabels = currGauges
 }
 
 func (c *collector) maybeInitCache() {
-	if c.metricsCache == nil {
-		c.metricsCache = lru.New(c.cardinality * c.maxResults * 2)
-		c.metricsCache.OnEvicted = func(key lru.Key, value interface{}) {
+	if c.countersCache == nil {
+		c.countersCache = lru.New(c.countersCardinality * c.maxResults * 2)
+		c.countersCache.OnEvicted = func(key lru.Key, value interface{}) {
 			labels := value.(cacheValue).labels
 			vec := value.(cacheValue).vec
 			vec.DeleteLabelValues(labels...)
