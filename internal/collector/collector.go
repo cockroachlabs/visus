@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -67,6 +68,7 @@ type collector struct {
 	query        string
 	first        bool
 	metricsCache *lru.Cache
+	gauges       map[string]map[string][]string
 	maxResults   int
 	registerer   prometheus.Registerer
 	mu           struct {
@@ -214,7 +216,6 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 		c.mu.inUse = false
 	}()
 	c.maybeInitCache()
-	c.resetGauges()
 	databases := make([]string, 0)
 	if c.databases != "" {
 		rows, err := conn.Query(ctx, c.databases)
@@ -315,6 +316,7 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 		return errors.New("columns returned in the query must be match labels+metrics")
 	}
 	labels := c.getAllLabels()
+	currGauges := make(map[string]map[string][]string)
 	for rows.Next() {
 		values, err := rows.Values()
 		if err != nil {
@@ -353,6 +355,11 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 						log.Errorf("%s: unknown type %T for %s", c.name, v, metric.name)
 					}
 				case *prometheus.GaugeVec:
+					if _, ok := currGauges[colName]; !ok {
+						currGauges[colName] = make(map[string][]string)
+					}
+					id := strings.Join(labelValues, "|")
+					currGauges[colName][id] = labelValues
 					switch value := v.(type) {
 					case float64:
 						c.gaugeSet(vec, metric.name, labelValues, value)
@@ -374,6 +381,7 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 			}
 		}
 	}
+	c.clearObsoleteGauges(currGauges)
 	return nil
 }
 
@@ -432,14 +440,23 @@ func (c *collector) getKey(name string, labels []string) (string, error) {
 	}
 	return string(jsonKey), nil
 }
-func (c *collector) resetGauges() {
-	for _, m := range c.metrics {
-		switch metric := m.vec.(type) {
-		case *prometheus.GaugeVec:
-			metric.Reset()
+
+// clearObsoleteGauges removes the metrics for labels that are no longer present.
+// This is required to prevent obsolete metrics from being reported.
+func (c *collector) clearObsoleteGauges(currGauges map[string]map[string][]string) {
+	for colName, labels := range c.gauges {
+		for id, lbs := range labels {
+			if _, ok := currGauges[colName][id]; ok {
+				continue
+			}
+			metric := c.metrics[colName]
+			vec := metric.vec.(*prometheus.GaugeVec)
+			vec.DeleteLabelValues(lbs...)
 		}
 	}
+	c.gauges = currGauges
 }
+
 func (c *collector) maybeInitCache() {
 	if c.metricsCache == nil {
 		c.metricsCache = lru.New(c.cardinality * c.maxResults * 2)
