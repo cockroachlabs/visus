@@ -155,11 +155,11 @@ func TestCollect(t *testing.T) {
 	r.NoError(err)
 	collector := coll.(*collector)
 	collector.maybeInitCache()
-	r.Equal(8, collector.metricsCache.MaxEntries)
-	r.Equal(0, collector.metricsCache.Len())
+	r.Equal(4, collector.countersCache.MaxEntries)
+	r.Equal(0, collector.countersCache.Len())
 	tests := []test{
 		{
-			"one",
+			"start",
 			[]sample{
 				{"test1", 1, 1},
 				{"test2", 1, 5},
@@ -168,10 +168,10 @@ func TestCollect(t *testing.T) {
 				counterMetricName: {"label:test1 1.000000", "label:test2 1.000000"},
 				gaugeMetricName:   {"label:test1 1.000000", "label:test2 5.000000"},
 			},
-			4,
+			2,
 		},
 		{
-			"two",
+			"counter_increase",
 			[]sample{
 				{"test1", 1, 3},
 				{"test2", 1, 1},
@@ -180,10 +180,10 @@ func TestCollect(t *testing.T) {
 				counterMetricName: {"label:test1 1.000000", "label:test2 1.000000"},
 				gaugeMetricName:   {"label:test1 3.000000", "label:test2 1.000000"},
 			},
-			4,
+			2,
 		},
 		{
-			"three",
+			"counter_increase_again",
 			[]sample{
 				{"test1", 4, 1},
 				{"test2", 2, 1},
@@ -192,10 +192,10 @@ func TestCollect(t *testing.T) {
 				counterMetricName: {"label:test1 4.000000", "label:test2 2.000000"},
 				gaugeMetricName:   {"label:test1 1.000000", "label:test2 1.000000"},
 			},
-			4,
+			2,
 		},
 		{
-			"four_counter_reset",
+			"counter_reset",
 			[]sample{
 				{"test1", 2, 1},
 				{"test3", 2, 1},
@@ -204,10 +204,10 @@ func TestCollect(t *testing.T) {
 				counterMetricName: {"label:test1 6.000000", "label:test2 2.000000", "label:test3 2.000000"},
 				gaugeMetricName:   {"label:test1 1.000000", "label:test3 1.000000"},
 			},
-			6,
+			3,
 		},
 		{
-			"five",
+			"new_labels",
 			[]sample{
 				{"test1", 2, 1},
 				{"test4", 2, 1},
@@ -216,10 +216,10 @@ func TestCollect(t *testing.T) {
 				counterMetricName: {"label:test1 6.000000", "label:test2 2.000000", "label:test3 2.000000", "label:test4 2.000000"},
 				gaugeMetricName:   {"label:test1 1.000000", "label:test4 1.000000"},
 			},
-			8,
+			4,
 		},
 		{
-			"six_test2_evicted",
+			"test2_evicted",
 			[]sample{
 				{"test1", 2, 1},
 				{"test5", 2, 1},
@@ -228,9 +228,10 @@ func TestCollect(t *testing.T) {
 				counterMetricName: {"label:test1 6.000000", "label:test3 2.000000", "label:test4 2.000000", "label:test5 2.000000"},
 				gaugeMetricName:   {"label:test1 1.000000", "label:test5 1.000000"},
 			},
-			8,
+			4,
 		},
 	}
+	// run sequentially only
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testCollect(t, collector, mock, tt.samples)
@@ -240,12 +241,12 @@ func TestCollect(t *testing.T) {
 				expectedGaugeLabels[i] = s.label
 			}
 			var actualGaugeLabels []string
-			for k := range collector.gauges[gauge] {
+			for k := range collector.gaugeLabels[gauge] {
 				actualGaugeLabels = append(actualGaugeLabels, k)
 			}
 			a.ElementsMatch(expectedGaugeLabels,
 				actualGaugeLabels)
-			a.Equal(tt.cacheLen, collector.metricsCache.Len())
+			a.Equal(tt.cacheLen, collector.countersCache.Len())
 		})
 	}
 }
@@ -270,11 +271,11 @@ func TestDatabaseCollect(t *testing.T) {
 	r.NoError(err)
 	collector := coll.(*collector)
 	collector.maybeInitCache()
-	r.Equal(8, collector.metricsCache.MaxEntries)
-	r.Equal(0, collector.metricsCache.Len())
+	r.Equal(4, collector.countersCache.MaxEntries)
+	r.Equal(0, collector.countersCache.Len())
 	tests := []test{
 		{
-			"one",
+			"start",
 			[]sample{
 				{"test1", 1, 1},
 				{"test2", 1, 5},
@@ -283,10 +284,10 @@ func TestDatabaseCollect(t *testing.T) {
 				counterMetricName: {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
 				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 5.000000"},
 			},
-			4,
+			2,
 		},
 		{
-			"two",
+			"counter_increase",
 			[]sample{
 				{"test1", 1, 3},
 				{"test2", 1, 1},
@@ -295,10 +296,10 @@ func TestDatabaseCollect(t *testing.T) {
 				counterMetricName: {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
 				gaugeMetricName:   {"_database:mydb,label:test1 3.000000", "_database:mydb,label:test2 1.000000"},
 			},
-			4,
+			2,
 		},
 		{
-			"three",
+			"counter_increase_again",
 			[]sample{
 				{"test1", 4, 1},
 				{"test2", 2, 1},
@@ -307,10 +308,10 @@ func TestDatabaseCollect(t *testing.T) {
 				counterMetricName: {"_database:mydb,label:test1 4.000000", "_database:mydb,label:test2 2.000000"},
 				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
 			},
-			4,
+			2,
 		},
 		{
-			"four_counter_reset",
+			"counter_reset",
 			[]sample{
 				{"test1", 2, 1},
 				{"test3", 2, 1},
@@ -319,10 +320,10 @@ func TestDatabaseCollect(t *testing.T) {
 				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test2 2.000000", "_database:mydb,label:test3 2.000000"},
 				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test3 1.000000"},
 			},
-			6,
+			3,
 		},
 		{
-			"five",
+			"new_labels",
 			[]sample{
 				{"test1", 2, 1},
 				{"test4", 2, 1},
@@ -331,10 +332,10 @@ func TestDatabaseCollect(t *testing.T) {
 				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test2 2.000000", "_database:mydb,label:test3 2.000000", "_database:mydb,label:test4 2.000000"},
 				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test4 1.000000"},
 			},
-			8,
+			4,
 		},
 		{
-			"six_test2_evicted",
+			"test2_evicted",
 			[]sample{
 				{"test1", 2, 1},
 				{"test5", 2, 1},
@@ -343,20 +344,21 @@ func TestDatabaseCollect(t *testing.T) {
 				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test3 2.000000", "_database:mydb,label:test4 2.000000", "_database:mydb,label:test5 2.000000"},
 				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test5 1.000000"},
 			},
-			8,
+			4,
 		},
 	}
+	// run sequentially only
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			testDatabaseCollect(t, collector, mock, tt.samples)
 			testVerify(t, prefix, tt.expected)
-			a.Equal(tt.cacheLen, collector.metricsCache.Len())
+			a.Equal(tt.cacheLen, collector.countersCache.Len())
 			expectedGaugeLabels := make([]string, len(tt.samples))
 			for i, s := range tt.samples {
 				expectedGaugeLabels[i] = fmt.Sprintf("%s|%s", s.label, dbName)
 			}
 			var actualGaugeLabels []string
-			for k := range collector.gauges[gauge] {
+			for k := range collector.gaugeLabels[gauge] {
 				actualGaugeLabels = append(actualGaugeLabels, k)
 			}
 			a.ElementsMatch(expectedGaugeLabels, actualGaugeLabels)
