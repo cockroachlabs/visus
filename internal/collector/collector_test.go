@@ -118,7 +118,7 @@ func testDatabaseCollect(
 // to specify the limit on the number results to be returned. The columns must contain the labels specified.
 // The format of the query:
 // (SELECT label1,label2, ..., metric1,metric2,... FROM ... WHERE ... LIMIT $1)
-func newCollector(name string, labels []string, databases string, query string) Collector {
+func newCollector(name string, labels []string, databases string, query string) *collector {
 	labelMap := make(map[string]int)
 	for i, l := range labels {
 		labelMap[l] = i
@@ -235,6 +235,16 @@ func TestCollect(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			testCollect(t, collector, mock, tt.samples)
 			testVerify(t, prefix, tt.expected)
+			expectedGaugeLabels := make([]string, len(tt.samples))
+			for i, s := range tt.samples {
+				expectedGaugeLabels[i] = s.label
+			}
+			var actualGaugeLabels []string
+			for k := range collector.gauges[gauge] {
+				actualGaugeLabels = append(actualGaugeLabels, k)
+			}
+			a.ElementsMatch(expectedGaugeLabels,
+				actualGaugeLabels)
 			a.Equal(tt.cacheLen, collector.metricsCache.Len())
 		})
 	}
@@ -247,10 +257,11 @@ func TestDatabaseCollect(t *testing.T) {
 	counter := "counter"
 	gauge := "gauge"
 	prefix := "dbcollect"
+	dbName := "mydb"
 	counterMetricName := strings.Join([]string{prefix, counter}, "_")
 	gaugeMetricName := strings.Join([]string{prefix, gauge}, "_")
 	coll := newCollector("testdb", []string{"label"},
-		"SELECT 'mydb'",
+		fmt.Sprintf("SELECT '%s'", dbName),
 		"SELECT label, counter, gauge from test limit $1").
 		WithMaxResults(maxResults)
 	err = coll.AddCounter(counter, counter)
@@ -340,6 +351,15 @@ func TestDatabaseCollect(t *testing.T) {
 			testDatabaseCollect(t, collector, mock, tt.samples)
 			testVerify(t, prefix, tt.expected)
 			a.Equal(tt.cacheLen, collector.metricsCache.Len())
+			expectedGaugeLabels := make([]string, len(tt.samples))
+			for i, s := range tt.samples {
+				expectedGaugeLabels[i] = fmt.Sprintf("%s|%s", s.label, dbName)
+			}
+			var actualGaugeLabels []string
+			for k := range collector.gauges[gauge] {
+				actualGaugeLabels = append(actualGaugeLabels, k)
+			}
+			a.ElementsMatch(expectedGaugeLabels, actualGaugeLabels)
 		})
 	}
 }
@@ -348,7 +368,7 @@ func TestAddCounter(t *testing.T) {
 	a, r := assertions(t)
 	collName := "counter"
 	coll := newCollector(collName, []string{"label"}, "",
-		"SELECT label, counter, gauge from test limit $1").(*collector)
+		"SELECT label, counter, gauge from test limit $1")
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
@@ -403,7 +423,7 @@ func TestAddGauge(t *testing.T) {
 	a, r := assertions(t)
 	collName := "gauge"
 	coll := newCollector(collName, []string{"label"}, "",
-		"SELECT label, counter, gauge from test limit $1").(*collector)
+		"SELECT label, counter, gauge from test limit $1")
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
@@ -459,7 +479,7 @@ func TestGaugeLifeCycle(t *testing.T) {
 	a, r := assertions(t)
 	collName := "lifecycle"
 	coll := newCollector(collName, []string{"label"}, "",
-		"SELECT label, counter, gauge from test limit $1").(*collector)
+		"SELECT label, counter, gauge from test limit $1")
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
@@ -495,7 +515,7 @@ func TestCounterLifeCycle(t *testing.T) {
 	a, r := assertions(t)
 	collName := "lifecycle"
 	coll := newCollector(collName, []string{"label"}, "",
-		"SELECT label, counter, gauge from test limit $1").(*collector)
+		"SELECT label, counter, gauge from test limit $1")
 	registry := prometheus.NewRegistry()
 	coll.registerer = registry
 
