@@ -30,6 +30,8 @@ LIMIT
 
 The Prometheus collectors will add additional labels to track the cluster name as well as the instance where the metrics are coming from.
 
+> Note: All queries executed to retrieve metrics are run on a **read-only connection** with follower reads enabled by default (`SET default_transaction_use_follower_reads = 'true'`). Follower reads allow queries to be served by replicas that are not necessarily the leaseholder, using slightly historical data (typically up to a few seconds old). This approach minimizes the risk of creating contention or adding load on the primary leaseholder replicas, ensuring that metric collection does not interfere with the performance of foreground workloads.
+
 ## Database Security
 
 It is recommended to use separate users for managing the configuration and to run the sidecar.
