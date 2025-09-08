@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 )
 
 // Writer copies metrics from a source to destination, applying a set of translators
@@ -105,7 +106,7 @@ func (w *Writer) Copy(ctx context.Context, out io.Writer) error {
 		return err
 	}
 	defer in.Close()
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	metricFamilies, err := parser.TextToMetricFamilies(in)
 	if err != nil {
 		return err
