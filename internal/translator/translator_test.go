@@ -26,6 +26,7 @@ import (
 
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +45,7 @@ var multistoreout string
 
 func TestHistogramConversion(t *testing.T) {
 	assert := assert.New(t)
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	histogram := &store.Histogram{
 		Start: 100,
 		Bins:  10}
@@ -128,7 +129,7 @@ func TestLoad(t *testing.T) {
 
 func TestMultiStoreConversion(t *testing.T) {
 	assert := assert.New(t)
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	histogram := &store.Histogram{
 		Start: 100,
 		Bins:  10}
@@ -146,7 +147,7 @@ func TestMultiStoreConversion(t *testing.T) {
 
 func TestIdentityConversion(t *testing.T) {
 	assert := assert.New(t)
-	var parser expfmt.TextParser
+	parser := expfmt.NewTextParser(model.LegacyValidation)
 	histogram := &store.Histogram{
 		Start: 100,
 		Bins:  10}
