@@ -19,16 +19,17 @@ import "time"
 // Config encapsulates the command-line parameters that can be supplied
 // to configure the behavior of Visus.
 type Config struct {
-	BindAddr          string        // Address to bind the server to.
-	BindCert, BindKey string        // Paths to Certificate and Key.
-	CaCert            string        // Path to the Root CA.
-	Endpoint          string        // Endpoint for metrics
-	Inotify           bool          // Enable inotify for scans.
-	Insecure          bool          // Sanity check to ensure that the operator really means it.
-	ProcMetrics       bool          // Enable collections of process metrics.
-	Prometheus        string        // URL for the node prometheus endpoint
-	Refresh           time.Duration // how often to refresh the configuration.
-	RewriteHistograms bool          // Enable histogram rewriting
-	URL               string        // URL to connect to the database
-	VisusMetrics      bool          // Enable collection of Visus metrics.
+	AllowUnsafeInternals bool          // Enable allow_unsafe_internals for database connections.
+	BindAddr             string        // Address to bind the server to.
+	BindCert, BindKey    string        // Paths to Certificate and Key.
+	CaCert               string        // Path to the Root CA.
+	Endpoint             string        // Endpoint for metrics
+	Inotify              bool          // Enable inotify for scans.
+	Insecure             bool          // Sanity check to ensure that the operator really means it.
+	ProcMetrics          bool          // Enable collections of process metrics.
+	Prometheus           string        // URL for the node prometheus endpoint
+	Refresh              time.Duration // how often to refresh the configuration.
+	RewriteHistograms    bool          // Enable histogram rewriting
+	URL                  string        // URL to connect to the database
+	VisusMetrics         bool          // Enable collection of Visus metrics.
 }

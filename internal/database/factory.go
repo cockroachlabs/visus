@@ -26,40 +26,54 @@ import (
 // New creates a new connection to the database.
 // It waits until a connection can be established, or that the context has been cancelled.
 func New(ctx context.Context, URL string) (*Pool, error) {
-	return new(ctx, URL, false)
+	return new(ctx, URL, false /* readOnly */, false /* allowUnsafeInternals */)
 }
 
-// ReadOnly creates a new connection to the database with follower reads
+// ReadOnly creates a new connection to the database with follower reads.
 // It waits until a connection can be established, or that the context has been cancelled.
-func ReadOnly(ctx context.Context, URL string) (*Pool, error) {
-	return new(ctx, URL, true)
+// If allowUnsafeInternals is true, sets allow_unsafe_internals = true on the connection.
+func ReadOnly(ctx context.Context, URL string, allowUnsafeInternals bool) (*Pool, error) {
+	return new(ctx, URL, true /* readOnly */, allowUnsafeInternals)
 }
 
-func new(ctx context.Context, URL string, ro bool) (*Pool, error) {
-	pool, err := pgxPool(ctx, URL, ro)
+func new(ctx context.Context, URL string, ro bool, allowUnsafeInternals bool) (*Pool, error) {
+	pool, err := pgxPool(ctx, URL, ro, allowUnsafeInternals)
 	if err != nil {
 		return nil, err
 	}
 	res := &Pool{
-		URL:      URL,
-		readOnly: ro,
+		URL:                  URL,
+		readOnly:             ro,
+		allowUnsafeInternals: allowUnsafeInternals,
 	}
 	res.mu.pool = pool
 	return res, nil
 }
 
-func pgxPool(ctx context.Context, URL string, ro bool) (*pgxpool.Pool, error) {
+func pgxPool(
+	ctx context.Context, URL string, ro bool, allowUnsafeInternals bool,
+) (*pgxpool.Pool, error) {
 	var pool *pgxpool.Pool
 	sleepTime := int64(5)
 	poolConfig, err := pgxpool.ParseConfig(URL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	if ro {
+	if ro || allowUnsafeInternals {
 		poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-			log.Debug("setting up a read only session")
-			_, err := conn.Exec(ctx, "set session default_transaction_use_follower_reads = true;")
-			return err
+			if ro {
+				log.Debug("setting up a read only session")
+				if _, err := conn.Exec(ctx, "set session default_transaction_use_follower_reads = true;"); err != nil {
+					return err
+				}
+			}
+			if allowUnsafeInternals {
+				log.Debug("setting allow_unsafe_internals = true")
+				if _, err := conn.Exec(ctx, "set allow_unsafe_internals = true;"); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 	}
 	for {
