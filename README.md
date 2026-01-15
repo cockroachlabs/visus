@@ -32,6 +32,8 @@ The Prometheus collectors will add additional labels to track the cluster name a
 
 > Note: All queries executed to retrieve metrics are run on a **read-only connection** with follower reads enabled by default (`SET default_transaction_use_follower_reads = 'true'`). Follower reads allow queries to be served by replicas that are not necessarily the leaseholder, using slightly historical data (typically up to a few seconds old). This approach minimizes the risk of creating contention or adding load on the primary leaseholder replicas, ensuring that metric collection does not interfere with the performance of foreground workloads.
 
+> Note: In CockroachDB v26 and later, the `--allow-unsafe-internals` flag is required to query `crdb_internal` tables on read-only connections. Use this flag with both the `start` and `collection test` commands when collections need to access internal tables.
+
 ## Database Security
 
 It is recommended to use separate users for managing the configuration and to run the sidecar.
@@ -435,6 +437,7 @@ Examples:
 ./visus start --bindAddr "127.0.0.1:15432" 
 
 Flags:
+      --allow-unsafe-internals   set allow_unsafe_internals = true for read-only database connections
       --bind-addr string     A network address and port to bind to (default "127.0.0.1:8888")
       --bind-cert string     Path to the  TLS certificate for the server
       --bind-key string      Path to the  TLS key for the server

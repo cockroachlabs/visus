@@ -245,6 +245,21 @@ func TestCommands(t *testing.T) {
 			initialStore:  []*store.Collection{collection1},
 			name:          "test collection store error",
 		},
+		{
+			args:               []string{"test", "--interval", "1s", "--allow-unsafe-internals", "--url", "fake://", collection1.Name},
+			expectedOut:        "HELP collection_01_queries total queries per database",
+			expectedStoreNames: []string{collection1.Name},
+			initialStore:       []*store.Collection{collection1},
+			name:               "test collection with allow-unsafe-internals flag",
+			mock:               mockResults(t),
+		},
+		{
+			args:          []string{"test", "--interval", "1s", "--invalid", "--url", "fake://", collection1.Name},
+			expectedError: "unknown flag: --invalid",
+			initialStore:  []*store.Collection{collection1},
+			name:          "test collection with invalid flag",
+			mock:          mockResults(t),
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

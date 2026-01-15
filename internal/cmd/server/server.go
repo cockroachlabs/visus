@@ -58,7 +58,7 @@ func Command() *cobra.Command {
 				return err
 			}
 			store := store.New(conn)
-			roConn, err := database.ReadOnly(ctx, cfg.URL)
+			roConn, err := database.ReadOnly(ctx, cfg.URL, cfg.AllowUnsafeInternals)
 			if err != nil {
 				return err
 			}
@@ -140,6 +140,7 @@ func Command() *cobra.Command {
 		},
 	}
 	f := c.Flags()
+	f.BoolVar(&cfg.AllowUnsafeInternals, "allow-unsafe-internals", false, "set allow_unsafe_internals = true for read-only database connections")
 	f.StringVar(&cfg.BindAddr, "bind-addr", "127.0.0.1:8888", "A network address and port to bind to")
 	f.StringVar(&cfg.BindCert, "bind-cert", "",
 		"Path to the  TLS certificate for the server")

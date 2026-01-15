@@ -172,6 +172,7 @@ func putCmd(env *env.Env) *cobra.Command {
 func testCmd(env *env.Env) *cobra.Command {
 	var interval time.Duration
 	var count int
+	var allowUnsafeInternals bool
 	c := &cobra.Command{
 		Use:     "test",
 		Example: `./visus collection test  collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
@@ -182,7 +183,7 @@ func testCmd(env *env.Env) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			conn, err := env.ProvideReadOnlyConnection(ctx, databaseURL)
+			conn, err := env.ProvideReadOnlyConnection(ctx, databaseURL, allowUnsafeInternals)
 			if err != nil {
 				return err
 			}
@@ -223,6 +224,7 @@ func testCmd(env *env.Env) *cobra.Command {
 		},
 	}
 	f := c.Flags()
+	f.BoolVar(&allowUnsafeInternals, "allow-unsafe-internals", false, "set allow_unsafe_internals = true for read-only database connections")
 	f.DurationVar(&interval, "interval", 10*time.Second, "interval of collection")
 	f.IntVar(&count, "count", 1, "number of times to run the collection. Specify 0 for continuos collection")
 	return c

@@ -26,9 +26,10 @@ import (
 
 // Pool provides a set of connections to the target database.
 type Pool struct {
-	readOnly bool
-	URL      string
-	mu       struct {
+	readOnly             bool
+	allowUnsafeInternals bool
+	URL                  string
+	mu                   struct {
 		sync.RWMutex
 		pool *pgxpool.Pool
 	}
@@ -70,7 +71,7 @@ func (p *Pool) Refresh(ctx context.Context) error {
 	var err error
 	// We don't lock the pool until we get the new one.
 	// Existing clients may still use the current pool.
-	if pool, err = pgxPool(ctx, p.URL, p.readOnly); err != nil {
+	if pool, err = pgxPool(ctx, p.URL, p.readOnly, p.allowUnsafeInternals); err != nil {
 		return err
 	}
 	p.mu.Lock()

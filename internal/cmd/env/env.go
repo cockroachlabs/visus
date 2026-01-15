@@ -77,13 +77,13 @@ func (e *Env) InjectStoreError(err error) {
 
 // ProvideReadOnlyConnection returns the database connection to use for collectors.
 func (e *Env) ProvideReadOnlyConnection(
-	ctx context.Context, databaseURL string,
+	ctx context.Context, databaseURL string, allowUnsafeInternals bool,
 ) (database.Connection, error) {
 	if e.testing {
 		return e.roPool, nil
 	}
 	var err error
-	e.roPool, err = database.ReadOnly(ctx, databaseURL)
+	e.roPool, err = database.ReadOnly(ctx, databaseURL, allowUnsafeInternals)
 	if err != nil {
 		return nil, err
 	}
