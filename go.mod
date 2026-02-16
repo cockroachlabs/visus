@@ -1,8 +1,6 @@
 module github.com/cockroachlabs/visus
 
-go 1.24.0
-
-toolchain go1.24.1
+go 1.25.0
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
@@ -27,7 +25,7 @@ require (
 	golang.org/x/tools v0.42.0
 	google.golang.org/protobuf v1.36.11
 	gopkg.in/yaml.v3 v3.0.1
-	honnef.co/go/tools v0.6.1
+	honnef.co/go/tools v0.7.0
 )
 
 require (
@@ -56,7 +54,6 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
-	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	google.golang.org/genproto v0.0.0-20231030173426-d783a09b4405 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 )
