@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS _visus.node (
     updated      timestamptz DEFAULT current_timestamp ()
 );
 
-GRANT SELECT,INSERT,UPDATE ON TABLE _visus.node TO visus;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE _visus.node TO visus;
 GRANT SELECT ON TABLE _visus.collection TO visus;
 GRANT SELECT ON TABLE _visus.metric TO visus;
 GRANT SELECT ON TABLE _visus.histogram TO visus;

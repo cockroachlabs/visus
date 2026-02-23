@@ -64,11 +64,12 @@ type scheduledJob struct {
 
 // serverImpl manages the collections.
 type serverImpl struct {
-	config    *server.Config
-	conn      database.Connection
-	registry  *prometheus.Registry
-	scheduler *gocron.Scheduler
-	store     store.Store
+	config      *server.Config
+	conn        database.Connection
+	registry    *prometheus.Registry
+	scheduler   *gocron.Scheduler
+	store       store.Store
+	wasMainNode bool
 
 	mu struct {
 		sync.RWMutex
@@ -182,9 +183,15 @@ func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
 	last := time.Now().UTC().Add(-s.config.Refresh)
 	isMainNode, err := s.store.IsMainNode(ctx, last)
 	if err != nil {
-		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
-		return err
+		log.Warnf("Error checking main node status, assuming not main node: %s", err.Error())
+		isMainNode = false
 	}
+	if isMainNode && !s.wasMainNode {
+		log.Info("This node is now the main node")
+	} else if !isMainNode && s.wasMainNode {
+		log.Info("This node is no longer the main node")
+	}
+	s.wasMainNode = isMainNode
 	for _, name := range names {
 		coll, err := s.store.GetCollection(ctx, name)
 		if err != nil {

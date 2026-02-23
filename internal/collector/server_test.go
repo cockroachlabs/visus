@@ -164,6 +164,158 @@ func TestRefreshCollectors(t *testing.T) {
 
 }
 
+func TestClusterScopeCollectors(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := stopper.WithContext(ctx)
+	conn := &mockDB{}
+	mockStore := &store.Memory{}
+	mockStore.Init(ctx)
+	cfg := &server.Config{}
+	registry := prometheus.NewRegistry()
+	srv := &serverImpl{
+		config:    cfg,
+		conn:      conn,
+		store:     mockStore,
+		scheduler: gocron.NewScheduler(time.UTC),
+		registry:  registry,
+	}
+	srv.mu.stopped = true
+	srv.mu.scheduledJobs = make(map[string]*scheduledJob)
+	srv.scheduler.StartAsync()
+
+	// Create a node-scoped collection.
+	nodeColl := &store.Collection{
+		Enabled: true,
+		Frequency: pgtype.Interval{
+			Microseconds: 1e6,
+			Valid:        true,
+		},
+		Labels: []string{"database"},
+		LastModified: pgtype.Timestamp{
+			Time:  time.Now(),
+			Valid: true,
+		},
+		MaxResult: 1,
+		Metrics: []store.Metric{
+			{Name: "count", Kind: store.Counter, Help: "num of databases"},
+		},
+		Name:  "databases",
+		Query: dbQuery,
+		Scope: store.Node,
+	}
+	// Create a cluster-scoped collection.
+	clusterColl := &store.Collection{
+		Enabled: true,
+		Frequency: pgtype.Interval{
+			Microseconds: 1e6,
+			Valid:        true,
+		},
+		Labels: []string{"statement"},
+		LastModified: pgtype.Timestamp{
+			Time:  time.Now(),
+			Valid: true,
+		},
+		MaxResult: 1,
+		Metrics: []store.Metric{
+			{Name: "count", Kind: store.Counter, Help: "num of statements"},
+		},
+		Name:  "statements",
+		Query: statsQuery,
+		Scope: store.Cluster,
+	}
+	r.NoError(mockStore.PutCollection(ctx, nodeColl))
+	r.NoError(mockStore.PutCollection(ctx, clusterColl))
+
+	// When main node: both collections should be scheduled.
+	mockStore.SetMainNode(true)
+	r.NoError(srv.Refresh(stop))
+	_, ok := srv.getJob(nodeColl.Name)
+	a.True(ok, "node-scoped collection should be scheduled")
+	_, ok = srv.getJob(clusterColl.Name)
+	a.True(ok, "cluster-scoped collection should be scheduled on main node")
+	a.Equal(2, len(srv.scheduler.Jobs()))
+
+	// When not main node: only node-scoped should remain.
+	mockStore.SetMainNode(false)
+	r.NoError(srv.Refresh(stop))
+	_, ok = srv.getJob(nodeColl.Name)
+	a.True(ok, "node-scoped collection should still be scheduled")
+	_, ok = srv.getJob(clusterColl.Name)
+	a.False(ok, "cluster-scoped collection should be removed on non-main node")
+	a.Equal(1, len(srv.scheduler.Jobs()))
+}
+
+func TestMainNodeTransition(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := stopper.WithContext(ctx)
+	conn := &mockDB{}
+	mockStore := &store.Memory{}
+	mockStore.Init(ctx)
+	cfg := &server.Config{}
+	registry := prometheus.NewRegistry()
+	srv := &serverImpl{
+		config:    cfg,
+		conn:      conn,
+		store:     mockStore,
+		scheduler: gocron.NewScheduler(time.UTC),
+		registry:  registry,
+	}
+	srv.mu.stopped = true
+	srv.mu.scheduledJobs = make(map[string]*scheduledJob)
+	srv.scheduler.StartAsync()
+
+	// Create a cluster-scoped collection.
+	clusterColl := &store.Collection{
+		Enabled: true,
+		Frequency: pgtype.Interval{
+			Microseconds: 1e6,
+			Valid:        true,
+		},
+		Labels: []string{"statement"},
+		LastModified: pgtype.Timestamp{
+			Time:  time.Now(),
+			Valid: true,
+		},
+		MaxResult: 1,
+		Metrics: []store.Metric{
+			{Name: "count", Kind: store.Counter, Help: "num of statements"},
+		},
+		Name:  "statements",
+		Query: statsQuery,
+		Scope: store.Cluster,
+	}
+	r.NoError(mockStore.PutCollection(ctx, clusterColl))
+
+	// Start as non-main node: cluster-scoped should not be scheduled.
+	mockStore.SetMainNode(false)
+	r.NoError(srv.Refresh(stop))
+	_, ok := srv.getJob(clusterColl.Name)
+	a.False(ok, "cluster-scoped should not be scheduled on non-main node")
+	a.Equal(0, len(srv.scheduler.Jobs()))
+
+	// Transition to main node: cluster-scoped should be added.
+	mockStore.SetMainNode(true)
+	r.NoError(srv.Refresh(stop))
+	_, ok = srv.getJob(clusterColl.Name)
+	a.True(ok, "cluster-scoped should be scheduled after becoming main node")
+	a.Equal(1, len(srv.scheduler.Jobs()))
+
+	// Transition back to non-main node: cluster-scoped should be removed.
+	mockStore.SetMainNode(false)
+	r.NoError(srv.Refresh(stop))
+	_, ok = srv.getJob(clusterColl.Name)
+	a.False(ok, "cluster-scoped should be removed after losing main node status")
+	a.Equal(0, len(srv.scheduler.Jobs()))
+}
+
 type mockDB struct {
 	dbcount, statscount atomic.Int32
 }

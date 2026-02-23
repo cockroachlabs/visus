@@ -14,7 +14,21 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
-WITH touch as (
+-- Main node election uses max(id) among recently-active nodes. This provides
+-- deterministic, stable leadership — the highest-ID active node always wins.
+-- This is intentional: leadership is sticky and predictable, avoiding flapping.
+--
+-- Note: there is a brief window (bounded by the refresh interval) where a
+-- previous main node may still run cluster-scoped collectors after leadership
+-- changes. This is acceptable because duplicate metrics are idempotent.
+
+WITH cleanup AS (
+DELETE FROM
+  _visus.node
+WHERE
+  updated < $1 - interval '24 hours'
+RETURNING *
+), touch as (
 UPSERT INTO
   _visus.node
 VALUES
