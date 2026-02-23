@@ -25,4 +25,5 @@ var (
 		},
 		labels,
 	)
+	scannerMetrics = []prometheus.Collector{errorCounts}
 )

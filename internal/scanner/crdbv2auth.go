@@ -28,7 +28,6 @@ type authFields struct {
 	Timestamp      int64
 	Transport      string
 	User           string
-	Extras         map[string]interface{} `json:"-"`
 }
 
 var jsonRegex = regexp.MustCompile(`={"\w+":`)

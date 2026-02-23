@@ -97,7 +97,10 @@ func Command() *cobra.Command {
 			}
 
 			// Start the server that manages the log scanners.
-			scannerServer := scanner.New(cfg, store, registry, scheduler)
+			scannerServer, err := scanner.New(cfg, store, registry, scheduler)
+			if err != nil {
+				return err
+			}
 			if err := scannerServer.Start(ctx); err != nil {
 				return err
 			}
