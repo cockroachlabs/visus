@@ -69,6 +69,9 @@ type serverImpl struct {
 	registry  *prometheus.Registry
 	scheduler *gocron.Scheduler
 	store     store.Store
+	refreshMu struct {
+		sync.Mutex
+	}
 
 	mu struct {
 		sync.RWMutex
@@ -130,6 +133,11 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 	}
 	_, err := s.scheduler.Every(s.config.Refresh).
 		Do(func() {
+			if !s.refreshMu.TryLock() {
+				log.Tracef("Skipping refresh, previous run still in progress")
+				return
+			}
+			defer s.refreshMu.Unlock()
 			err := s.Refresh(ctx)
 			if err != nil {
 				log.Errorf("Error refreshing metrics %s", err.Error())

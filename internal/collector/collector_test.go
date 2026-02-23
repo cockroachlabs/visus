@@ -125,7 +125,6 @@ func newCollector(name string, labels []string, databases string, query string) 
 	}
 	return &collector{
 		enabled:    true,
-		first:      true,
 		frequency:  10,
 		labelMap:   labelMap,
 		labels:     labels,

@@ -63,7 +63,6 @@ type collector struct {
 	countersCardinality int
 	databases           string
 	enabled             bool
-	first               bool
 	frequency           int
 	gaugeLabels         map[string]map[string][]string
 	labelMap            map[string]int
@@ -75,7 +74,6 @@ type collector struct {
 	registerer          prometheus.Registerer
 	mu                  struct {
 		sync.Mutex
-		inUse bool
 	}
 }
 
@@ -124,7 +122,6 @@ func FromCollection(coll *store.Collection, registerer prometheus.Registerer) (C
 	}
 	res := &collector{
 		enabled:      true,
-		first:        true,
 		frequency:    int(coll.Frequency.Microseconds / (1000 * 1000)),
 		labelMap:     labelMap,
 		labels:       coll.Labels,
@@ -205,17 +202,15 @@ func (c *collector) AddGauge(name string, help string) error {
 }
 
 // Collect execute the query and updates the Prometheus metrics.
-// (TODO: silvano) handle global collectors (run only on one node)
 func (c *collector) Collect(ctx context.Context, conn database.Connection) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.mu.inUse || !c.enabled {
+	if !c.mu.TryLock() {
+		log.Warnf("%s: skipping collection, previous run still in progress", c.name)
 		return nil
 	}
-	c.mu.inUse = true
-	defer func() {
-		c.mu.inUse = false
-	}()
+	defer c.mu.Unlock()
+	if !c.enabled {
+		return nil
+	}
 	c.maybeInitCache()
 	databases := make([]string, 0)
 	if c.databases != "" {
@@ -286,26 +281,29 @@ func (c *collector) WithRegisterer(reg prometheus.Registerer) Collector {
 }
 
 // Collect execute the query and updates the Prometheus metrics.
-// (TODO: silvano) handle global collectors (run only on one node)
 func (c *collector) collectLocked(ctx context.Context, db string, conn database.Connection) error {
 	tx, err := conn.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Commit(ctx)
-	query := c.query
-	log.Debugf("Collect %s %s", db, c.name)
-	log.Tracef("Collect %s query %s ", c.name, query)
-	if db != "" {
-		if _, err := tx.Exec(ctx, "USE $1", db); err != nil {
+	defer func() {
+		if err != nil {
 			tx.Rollback(ctx)
+		} else {
+			tx.Commit(ctx)
+		}
+	}()
+	query := c.query
+	log.Infof("Collect %s %s", db, c.name)
+	log.Debugf("Collect %s query %s ", c.name, query)
+	if db != "" {
+		if _, err = tx.Exec(ctx, "USE $1", db); err != nil {
 			return err
 		}
 	}
 	rows, err := tx.Query(ctx, query, c.maxResults)
 	if err != nil {
 		log.Errorf("Collect %s \n%s", err.Error(), c.query)
-		tx.Rollback(ctx)
 		return err
 	}
 	defer rows.Close()
@@ -313,8 +311,8 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 	desc := rows.FieldDescriptions()
 	if len(desc) != len(c.labels)+len(c.metrics) {
 		log.Errorf("%s: column mismatch %v %d %d \n", c.name, desc, len(c.labels), len(c.metrics))
-		tx.Rollback(ctx)
-		return errors.New("columns returned in the query must be match labels+metrics")
+		err = errors.New("columns returned in the query must be match labels+metrics")
+		return err
 	}
 	labels := c.getAllLabels()
 	currGauges := make(map[string]map[string][]string)
@@ -363,14 +361,14 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 					currGauges[colName][id] = labelValues
 					switch value := v.(type) {
 					case float64:
-						c.gaugeSet(vec, metric.name, labelValues, value)
+						c.gaugeSet(vec, labelValues, value)
 					case int:
-						c.gaugeSet(vec, metric.name, labelValues, float64(value))
+						c.gaugeSet(vec, labelValues, float64(value))
 					case pgtype.Numeric:
 						if floatValue, err := value.Float64Value(); err != nil {
 							log.Errorf("%s: collect %s", c.name, err.Error())
 						} else {
-							c.gaugeSet(vec, metric.name, labelValues, floatValue.Float64)
+							c.gaugeSet(vec, labelValues, floatValue.Float64)
 						}
 					case nil:
 					default:
@@ -397,8 +395,10 @@ func (c *collector) counterAdd(
 	var delta float64
 	v, ok := c.countersCache.Get(key)
 	if ok {
-		cv, _ := v.(cacheValue)
-		if cv.value > value {
+		cv, cvOk := v.(cacheValue)
+		if !cvOk {
+			delta = value
+		} else if cv.value > value {
 			delta = value
 		} else {
 			delta = value - cv.value
@@ -411,9 +411,7 @@ func (c *collector) counterAdd(
 }
 
 // gaugeSet sets a gauge value.
-func (c *collector) gaugeSet(
-	vec *prometheus.GaugeVec, name string, labels []string, value float64,
-) {
+func (c *collector) gaugeSet(vec *prometheus.GaugeVec, labels []string, value float64) {
 	vec.WithLabelValues(labels...).Set(value)
 }
 
@@ -449,7 +447,10 @@ func (c *collector) clearObsoleteGauges(currGauges map[string]map[string][]strin
 			if !ok {
 				continue
 			}
-			vec := metric.vec.(*prometheus.GaugeVec)
+			vec, ok := metric.vec.(*prometheus.GaugeVec)
+			if !ok {
+				continue
+			}
 			vec.DeleteLabelValues(lbs...)
 		}
 	}
@@ -460,9 +461,11 @@ func (c *collector) maybeInitCache() {
 	if c.countersCache == nil {
 		c.countersCache = lru.New(c.countersCardinality * c.maxResults * 2)
 		c.countersCache.OnEvicted = func(key lru.Key, value interface{}) {
-			labels := value.(cacheValue).labels
-			vec := value.(cacheValue).vec
-			vec.DeleteLabelValues(labels...)
+			cv, ok := value.(cacheValue)
+			if !ok {
+				return
+			}
+			cv.vec.DeleteLabelValues(cv.labels...)
 		}
 	}
 }
