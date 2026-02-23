@@ -45,7 +45,14 @@ var _ server.Server = &scannerServer{}
 // New returns a server that manages scanners.
 func New(
 	cfg *server.Config, store store.Store, registry *prometheus.Registry, scheduler *gocron.Scheduler,
-) server.Server {
+) (server.Server, error) {
+	if cfg.VisusMetrics {
+		for _, m := range scannerMetrics {
+			if err := registry.Register(m); err != nil {
+				return nil, err
+			}
+		}
+	}
 	scanners := &scannerServer{
 		config:    cfg,
 		registry:  registry,
@@ -53,7 +60,7 @@ func New(
 		store:     store,
 	}
 	scanners.mu.scanners = make(map[string]*Scanner)
-	return scanners
+	return scanners, nil
 }
 
 // Refresh implements server.Server
@@ -97,7 +104,6 @@ func (s *scannerServer) buildScanner(name string, scan *store.Scan) (*Scanner, e
 		Follow:        true,
 		FromBeginning: s.fromBeginning,
 		Poll:          !s.config.Inotify,
-		Reopen:        true,
 	}, s.registry)
 	if err != nil {
 		return nil, err
@@ -107,20 +113,18 @@ func (s *scannerServer) buildScanner(name string, scan *store.Scan) (*Scanner, e
 }
 
 // cleanup removes all the scanners that we don't need to keep.
-func (s *scannerServer) cleanup(toKeep map[string]bool) (err error) {
+func (s *scannerServer) cleanup(toKeep map[string]bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for key, value := range s.mu.scanners {
 		if _, ok := toKeep[key]; !ok {
 			log.Infof("Removing scanner %s", key)
-			err = value.Stop()
-			if err != nil {
-				return
+			if err := value.Stop(); err != nil {
+				log.Errorf("Error stopping scanner %s: %s", key, err.Error())
 			}
 			delete(s.mu.scanners, key)
 		}
 	}
-	return
 }
 
 // delete the named scanner
@@ -176,5 +180,6 @@ func (s *scannerServer) refresh(ctx *stopper.Context) error {
 			log.Errorf("Error starting scanner %s: %s", name, err.Error())
 		}
 	}
-	return s.cleanup(newScans)
+	s.cleanup(newScans)
+	return nil
 }

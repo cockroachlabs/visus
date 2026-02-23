@@ -34,7 +34,6 @@ type Config struct {
 	Follow        bool
 	FromBeginning bool
 	Poll          bool
-	Reopen        bool
 }
 
 // Metric defines the prometheus counter to increment when a line matches the regular expression.
@@ -187,7 +186,7 @@ func (s *Scanner) parse(tail *tail.Tail) {
 		for _, metric := range s.metrics {
 			if err := s.parser.Parse([]byte(line.Text), metric); err != nil {
 				errorCounts.WithLabelValues(tail.Filename).Inc()
-				log.WithError(err).Error("failed to parse auth object", line.Num)
+				log.WithError(err).Errorf("failed to parse line %d", line.Num)
 			}
 		}
 	}
