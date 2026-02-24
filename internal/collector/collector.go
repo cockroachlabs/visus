@@ -286,13 +286,7 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			tx.Rollback(ctx)
-		} else {
-			tx.Commit(ctx)
-		}
-	}()
+	defer tx.Rollback(ctx)
 	query := c.query
 	log.Infof("Collect %s %s", db, c.name)
 	log.Debugf("Collect %s query %s ", c.name, query)
@@ -381,7 +375,7 @@ func (c *collector) collectLocked(ctx context.Context, db string, conn database.
 		}
 	}
 	c.clearObsoleteGauges(currGauges)
-	return nil
+	return tx.Commit(ctx)
 }
 
 // counterAdd adds the new value to the counter.
@@ -395,6 +389,7 @@ func (c *collector) counterAdd(
 	var delta float64
 	v, ok := c.countersCache.Get(key)
 	if ok {
+		// Guard against unexpected cache value type; treat as counter reset.
 		cv, cvOk := v.(cacheValue)
 		if !cvOk {
 			delta = value
@@ -447,6 +442,9 @@ func (c *collector) clearObsoleteGauges(currGauges map[string]map[string][]strin
 			if !ok {
 				continue
 			}
+			// Defensive: metric.vec should always be a *prometheus.GaugeVec here
+			// since gaugeLabels only tracks gauges, but guard to avoid a panic
+			// on corrupt state.
 			vec, ok := metric.vec.(*prometheus.GaugeVec)
 			if !ok {
 				continue
@@ -460,6 +458,8 @@ func (c *collector) clearObsoleteGauges(currGauges map[string]map[string][]strin
 func (c *collector) maybeInitCache() {
 	if c.countersCache == nil {
 		c.countersCache = lru.New(c.countersCardinality * c.maxResults * 2)
+		// Defensive: evicted values should always be cacheValue, but guard
+		// to avoid a panic if the cache contains an unexpected type.
 		c.countersCache.OnEvicted = func(key lru.Key, value interface{}) {
 			cv, ok := value.(cacheValue)
 			if !ok {

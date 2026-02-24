@@ -88,6 +88,8 @@ func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, r
 		res.AddRow(row.label, row.counter, row.gauge)
 	}
 	query.WillReturnRows(res)
+	mock.ExpectCommit()
+	mock.ExpectRollback()
 	err := collector.Collect(context.Background(), mock)
 	require.NoError(t, err)
 }
@@ -108,6 +110,8 @@ func testDatabaseCollect(
 		res.AddRow(row.label, row.counter, row.gauge)
 	}
 	query.WillReturnRows(res)
+	mock.ExpectCommit()
+	mock.ExpectRollback()
 	err := collector.Collect(context.Background(), mock)
 	require.NoError(t, err)
 }
@@ -512,6 +516,26 @@ func TestGaugeLifeCycle(t *testing.T) {
 	r.Equal(0, len(families))
 
 }
+func TestCollectSkipsConcurrent(t *testing.T) {
+	_, r := assertions(t)
+	mock, err := pgxmock.NewConn()
+	r.NoError(err)
+	coll := newCollector("concurrent", []string{"label"}, "",
+		"SELECT label, counter, gauge from test limit $1").
+		WithMaxResults(maxResults)
+	c := coll.(*collector)
+
+	// Hold the lock to simulate a concurrent collection in progress.
+	c.mu.Lock()
+
+	// Collect should return nil immediately without executing any query.
+	// No mock expectations are set, so any DB call would cause a failure.
+	err = c.Collect(context.Background(), mock)
+	r.NoError(err)
+
+	c.mu.Unlock()
+}
+
 func TestCounterLifeCycle(t *testing.T) {
 	a, r := assertions(t)
 	collName := "lifecycle"
