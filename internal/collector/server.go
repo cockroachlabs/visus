@@ -112,14 +112,9 @@ func New(
 
 // Refresh implements server.Server
 func (s *serverImpl) Refresh(ctx *stopper.Context) error {
-	log.Info("Refreshing metrics collector configuration")
-	err := s.refresh(ctx)
-	if err != nil {
-		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
-		return err
-	}
-	server.RefreshCounts.WithLabelValues("metric_collector").Inc()
-	return nil
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lockedRefresh(ctx)
 }
 
 // Start implements server.Server.
@@ -130,28 +125,28 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 	}
 	_, err := s.scheduler.Every(s.config.Refresh).
 		Do(func() {
-			err := s.Refresh(ctx)
-			if err != nil {
+			if !s.mu.TryLock() {
+				log.Tracef("Skipping refresh, previous run still in progress")
+				return
+			}
+			defer s.mu.Unlock()
+			if err := s.lockedRefresh(ctx); err != nil {
 				log.Errorf("Error refreshing metrics %s", err.Error())
 			}
 		})
 	return err
 }
 
-// addJob add a new collector to the scheduler.
-func (s *serverImpl) addJob(name string, coll Collector, job *gocron.Job) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// lockedAddJob adds a new collector to the scheduler. Must be called with mu held.
+func (s *serverImpl) lockedAddJob(name string, coll Collector, job *gocron.Job) {
 	s.mu.scheduledJobs[name] = &scheduledJob{
 		collector: coll,
 		job:       job,
 	}
 }
 
-// cleanupJobs removes all the jobs that we don't need to keep.
-func (s *serverImpl) cleanupJobs(toKeep map[string]bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+// lockedCleanupJobs removes all the jobs that we don't need to keep. Must be called with mu held.
+func (s *serverImpl) lockedCleanupJobs(toKeep map[string]bool) {
 	for key, value := range s.mu.scheduledJobs {
 		if _, ok := toKeep[key]; !ok {
 			log.Infof("Removing collector: %s", key)
@@ -162,24 +157,32 @@ func (s *serverImpl) cleanupJobs(toKeep map[string]bool) {
 	}
 }
 
-// getJob the named job.
-func (s *serverImpl) getJob(name string) (*scheduledJob, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// lockedGetJob returns the named job. Must be called with mu held.
+func (s *serverImpl) lockedGetJob(name string) (*scheduledJob, bool) {
 	job, ok := s.mu.scheduledJobs[name]
 	return job, ok
 }
 
-func (s *serverImpl) refresh(ctx *stopper.Context) error {
+// getJob acquires mu before calling lockedGetJob.
+func (s *serverImpl) getJob(name string) (*scheduledJob, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.lockedGetJob(name)
+}
+
+// lockedRefresh performs the refresh logic. Must be called with s.mu held.
+func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
+	log.Info("Refreshing metrics collector configuration")
 	newCollectors := make(map[string]bool)
 	names, err := s.store.GetCollectionNames(ctx)
 	if err != nil {
+		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
 		return err
 	}
-	log.Info("Refreshing metrics")
 	last := time.Now().UTC().Add(-s.config.Refresh)
 	isMainNode, err := s.store.IsMainNode(ctx, last)
 	if err != nil {
+		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
 		return err
 	}
 	for _, name := range names {
@@ -193,7 +196,7 @@ func (s *serverImpl) refresh(ctx *stopper.Context) error {
 			continue
 		}
 		newCollectors[name] = true
-		existing, found := s.getJob(coll.Name)
+		existing, found := s.lockedGetJob(coll.Name)
 		if found && !existing.collector.GetLastModified().Before(coll.LastModified.Time) {
 			log.Debugf("Already scheduled %s", coll.Name)
 			continue
@@ -230,8 +233,9 @@ func (s *serverImpl) refresh(ctx *stopper.Context) error {
 			log.Errorf("error scheduling collector %s: %s", coll.Name, err.Error())
 			continue
 		}
-		s.addJob(coll.Name, collctr, job)
+		s.lockedAddJob(coll.Name, collctr, job)
 	}
-	s.cleanupJobs(newCollectors)
+	s.lockedCleanupJobs(newCollectors)
+	server.RefreshCounts.WithLabelValues("metric_collector").Inc()
 	return nil
 }
