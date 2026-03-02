@@ -93,6 +93,7 @@ func main() {
 	f.StringVar(&logDestination, "logDestination", "", "write logs to a file, instead of stdout")
 	f.CountVarP(&verbosity, "verbose", "v", "increase logging verbosity to debug; repeat for trace")
 
+	root.SetOut(os.Stdout)
 	root.AddCommand(server.Command())
 	root.AddCommand(collection.Command())
 	root.AddCommand(scan.Command())
