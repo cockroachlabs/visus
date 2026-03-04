@@ -28,6 +28,8 @@ type Config struct {
 	Insecure             bool          // Sanity check to ensure that the operator really means it.
 	ProcMetrics          bool          // Enable collections of process metrics.
 	Prometheus           string        // URL for the node prometheus endpoint
+	UseRandomID          bool          // Use a random ID instead of CockroachDB node ID.
+	LeaseInterval        time.Duration // how often to renew the leader lease.
 	Refresh              time.Duration // how often to refresh the configuration.
 	RewriteHistograms    bool          // Enable histogram rewriting
 	URL                  string        // URL to connect to the database

@@ -437,20 +437,23 @@ Examples:
 ./visus start --bindAddr "127.0.0.1:15432" 
 
 Flags:
-      --allow-unsafe-internals   set allow_unsafe_internals = true for read-only database connections
-      --bind-addr string     A network address and port to bind to (default "127.0.0.1:8888")
-      --bind-cert string     Path to the  TLS certificate for the server
-      --bind-key string      Path to the  TLS key for the server
-      --ca-cert string       Path to the  CA certificate
-      --endpoint string      Endpoint for metrics. (default "/_status/vars")
-  -h, --help                 help for start
-      --insecure             this flag must be set if no TLS configuration is provided
-      --proc-metrics         enable the collection of process metrics
-      --prometheus string    prometheus endpoint
-      --refresh duration     How ofter to refresh the configuration from the database. (default 5m0s)
-      --rewrite-histograms   enable histogram rewriting
-      --url string           Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
-      --visus-metrics        enable the collection of visus metrics
+      --allow-unsafe-internals    set allow_unsafe_internals = true for read-only database connections
+      --bind-addr string          A network address and port to bind to (default "127.0.0.1:8888")
+      --bind-cert string          Path to the  TLS certificate for the server
+      --bind-key string           Path to the  TLS key for the server
+      --ca-cert string            Path to the  CA certificate
+      --endpoint string           Endpoint for metrics. (default "/_status/vars")
+  -h, --help                      help for start
+      --inotify                   enable inotify for scans
+      --insecure                  this flag must be set if no TLS configuration is provided
+      --lease-interval duration   How often to renew the leader lease. (default 30s)
+      --proc-metrics              enable the collection of process metrics
+      --prometheus string         prometheus endpoint
+      --random-id                 use a random ID instead of CockroachDB node ID
+      --refresh duration          How often to refresh the configuration from the database. (default 5m0s)
+      --rewrite-histograms        enable histogram rewriting
+      --url string                Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
+      --visus-metrics             enable the collection of visus metrics
 
 Global Flags:
       --logDestination string   write logs to a file, instead of stdout

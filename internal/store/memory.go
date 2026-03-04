@@ -29,8 +29,8 @@ type Memory struct {
 
 	mu struct {
 		sync.RWMutex
-		err      error // Error to return
-		mainNode bool
+		err    error // Error to return
+		leader bool
 	}
 }
 
@@ -155,11 +155,16 @@ func (m *Memory) InjectError(err error) {
 	m.mu.err = err
 }
 
-// IsMainNode implements store.Store.
-func (m *Memory) IsMainNode(_ context.Context, lastUpdated time.Time) (bool, error) {
+// IsLeader implements store.Store.
+func (m *Memory) IsLeader(_ context.Context, _ time.Duration) (bool, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return m.mu.mainNode, m.mu.err
+	return m.mu.leader, m.mu.err
+}
+
+// CleanupStaleNodes implements store.Store.
+func (m *Memory) CleanupStaleNodes(_ context.Context) error {
+	return m.Error()
 }
 
 // PutCollection implements store.Store.
@@ -189,11 +194,11 @@ func (m *Memory) PutScan(_ context.Context, scan *Scan) error {
 	return nil
 }
 
-// SetMainNode sets this store as the main node.
-func (m *Memory) SetMainNode(main bool) {
+// SetLeader sets this store as the leader.
+func (m *Memory) SetLeader(leader bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.mainNode = main
+	m.mu.leader = leader
 }
 
 func (m *Memory) getNames(vals *sync.Map) ([]string, error) {

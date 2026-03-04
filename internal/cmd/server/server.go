@@ -16,7 +16,9 @@
 package server
 
 import (
+	"crypto/rand"
 	"errors"
+	"math/big"
 	"os"
 	"os/signal"
 	"syscall"
@@ -57,7 +59,19 @@ func Command() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			store := store.New(conn)
+			var st store.Store
+			if cfg.UseRandomID {
+				maxID := new(big.Int).SetInt64(1<<62 - 1)
+				n, err := rand.Int(rand.Reader, maxID)
+				if err != nil {
+					return err
+				}
+				nodeID := n.Int64() + 1
+				log.Infof("using random node ID: %d", nodeID)
+				st = store.NewWithNodeID(conn, nodeID)
+			} else {
+				st = store.New(conn)
+			}
 			roConn, err := database.ReadOnly(ctx, cfg.URL, cfg.AllowUnsafeInternals)
 			if err != nil {
 				return err
@@ -79,7 +93,7 @@ func Command() *cobra.Command {
 			})
 
 			// Start the Prometheus http endpoint.
-			httpServer, err := http.New(ctx, cfg, store, registry, scheduler)
+			httpServer, err := http.New(ctx, cfg, st, registry, scheduler)
 			if err != nil {
 				return err
 			}
@@ -88,7 +102,7 @@ func Command() *cobra.Command {
 			}
 
 			// Start the collector server.
-			collServer, err := collector.New(cfg, store, roConn, registry, scheduler)
+			collServer, err := collector.New(cfg, st, roConn, registry, scheduler)
 			if err != nil {
 				return err
 			}
@@ -97,7 +111,7 @@ func Command() *cobra.Command {
 			}
 
 			// Start the server that manages the log scanners.
-			scannerServer, err := scanner.New(cfg, store, registry, scheduler)
+			scannerServer, err := scanner.New(cfg, st, registry, scheduler)
 			if err != nil {
 				return err
 			}
@@ -151,8 +165,10 @@ func Command() *cobra.Command {
 		"Path to the  TLS key for the server")
 	f.StringVar(&cfg.CaCert, "ca-cert", "",
 		"Path to the  CA certificate")
+	f.DurationVar(&cfg.LeaseInterval, "lease-interval", 30*time.Second,
+		"How often to renew the leader lease.")
 	f.DurationVar(&cfg.Refresh, "refresh", 5*time.Minute,
-		"How ofter to refresh the configuration from the database.")
+		"How often to refresh the configuration from the database.")
 	f.StringVar(&cfg.Endpoint, "endpoint", "/_status/vars",
 		"Endpoint for metrics.")
 	f.BoolVar(&cfg.Inotify, "inotify", false, "enable inotify for scans")
@@ -162,6 +178,7 @@ func Command() *cobra.Command {
 	f.StringVar(&cfg.URL, "url", "",
 		"Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]")
 	f.StringVar(&cfg.Prometheus, "prometheus", "", "prometheus endpoint")
+	f.BoolVar(&cfg.UseRandomID, "random-id", false, "use a random ID instead of CockroachDB node ID")
 	f.BoolVar(&cfg.RewriteHistograms, "rewrite-histograms", false, "enable histogram rewriting")
 	return c
 }

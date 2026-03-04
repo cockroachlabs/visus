@@ -1,4 +1,4 @@
--- Copyright 2024 The Cockroach Authors
+-- Copyright 2026 The Cockroach Authors
 --
 -- Licensed under the Apache License, Version 2.0 (the "License");
 -- you may not use this file except in compliance with the License.
@@ -14,26 +14,7 @@
 --
 -- SPDX-License-Identifier: Apache-2.0
 
-WITH touch as (
-UPSERT INTO
-  _visus.node
-VALUES
-  ((SELECT node_id::INT FROM [SHOW node_id]), current_timestamp())
-RETURNING _visus.node.*
-), nodes as (
-SELECT
-  *
-FROM
-  _visus.node
-WHERE
-  updated >= $1
-UNION
-SELECT
-  *
-FROM
-  touch
-)
-SELECT
-  max(id) = (SELECT node_id::INT FROM [SHOW node_id])
-FROM
-  nodes;
+-- Upsert the current node's heartbeat timestamp.
+INSERT INTO _visus.node (id, updated)
+VALUES ($1, current_timestamp())
+ON CONFLICT (id) DO UPDATE SET updated = current_timestamp();

@@ -16,6 +16,7 @@ package collector
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cockroachdb/field-eng-powertools/stopper"
@@ -69,6 +70,10 @@ type serverImpl struct {
 	registry  *prometheus.Registry
 	scheduler *gocron.Scheduler
 	store     store.Store
+	// isLeader is accessed atomically rather than under mu so that
+	// the fast-cadence lease renewal goroutine can update it without
+	// blocking on (or being blocked by) a slow collection refresh.
+	isLeader atomic.Bool
 
 	mu struct {
 		sync.RWMutex
@@ -123,7 +128,32 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 	if s.scheduler == nil {
 		return s.Refresh(ctx)
 	}
-	_, err := s.scheduler.Every(s.config.Refresh).
+
+	if _, err := s.scheduler.Every(s.config.LeaseInterval).
+		Do(func() {
+			isLeader, err := s.store.IsLeader(ctx, s.config.LeaseInterval)
+			if err != nil {
+				log.Warnf("Error checking leader status, assuming not leader: %s", err.Error())
+				isLeader = false
+			}
+			wasLeader := s.isLeader.Swap(isLeader)
+			if isLeader && !wasLeader {
+				log.Info("This node is now the leader")
+				// Force a refresh so cluster-scoped collectors start immediately.
+				s.mu.Lock()
+				defer s.mu.Unlock()
+				if err := s.lockedRefresh(ctx); err != nil {
+					log.Errorf("Error refreshing metrics on leadership change: %s", err.Error())
+				}
+			} else if !isLeader && wasLeader {
+				log.Info("This node is no longer the leader")
+			}
+		}); err != nil {
+		return err
+	}
+
+	// Collection refresh runs on the (slower) refresh cadence.
+	if _, err := s.scheduler.Every(s.config.Refresh).
 		Do(func() {
 			if !s.mu.TryLock() {
 				log.Tracef("Skipping refresh, previous run still in progress")
@@ -133,7 +163,22 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 			if err := s.lockedRefresh(ctx); err != nil {
 				log.Errorf("Error refreshing metrics %s", err.Error())
 			}
-		})
+		}); err != nil {
+		return err
+	}
+
+	// Run stale-node cleanup once at startup, then hourly (leader only).
+	cleanupFn := func() {
+		if !s.isLeader.Load() {
+			return
+		}
+		if err := s.store.CleanupStaleNodes(ctx); err != nil {
+			log.Warnf("Error cleaning up stale nodes: %s", err.Error())
+		}
+	}
+	cleanupFn()
+	_, err := s.scheduler.Every(1).Hour().
+		Do(cleanupFn)
 	return err
 }
 
@@ -179,20 +224,15 @@ func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
 		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
 		return err
 	}
-	last := time.Now().UTC().Add(-s.config.Refresh)
-	isMainNode, err := s.store.IsMainNode(ctx, last)
-	if err != nil {
-		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
-		return err
-	}
+	isLeader := s.isLeader.Load()
 	for _, name := range names {
 		coll, err := s.store.GetCollection(ctx, name)
 		if err != nil {
 			log.Errorf("Unable to find %s: %s", name, err.Error())
 			continue
 		}
-		if !coll.Enabled || (coll.Scope == store.Cluster && !isMainNode) {
-			log.Infof("Skipping %s; enabled: %t; scope: %s; main node: %t", name, coll.Enabled, coll.Scope, isMainNode)
+		if !coll.Enabled || (coll.Scope == store.Cluster && !isLeader) {
+			log.Infof("Skipping %s; enabled: %t; scope: %s; leader: %t", name, coll.Enabled, coll.Scope, isLeader)
 			continue
 		}
 		newCollectors[name] = true

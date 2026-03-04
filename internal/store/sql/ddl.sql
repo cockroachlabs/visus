@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS _visus.node (
     updated      timestamptz DEFAULT current_timestamp ()
 );
 
-GRANT SELECT,INSERT,UPDATE ON TABLE _visus.node TO visus;
+GRANT SELECT,INSERT,UPDATE,DELETE ON TABLE _visus.node TO visus;
 GRANT SELECT ON TABLE _visus.collection TO visus;
 GRANT SELECT ON TABLE _visus.metric TO visus;
 GRANT SELECT ON TABLE _visus.histogram TO visus;
@@ -95,3 +95,12 @@ GRANT SELECT ON TABLE _visus.pattern TO visus;
 
 ALTER TABLE _visus.pattern ADD COLUMN IF NOT EXISTS exclude STRING DEFAULT '';
 ALTER TABLE _visus.collection ADD COLUMN IF NOT EXISTS databases STRING DEFAULT '';
+CREATE TABLE IF NOT EXISTS _visus.leader (
+    singleton        BOOL PRIMARY KEY DEFAULT true CHECK (singleton = true),
+    node_id          INT NOT NULL,
+    lease_expires_at TIMESTAMPTZ NOT NULL DEFAULT '1970-01-01',
+    nonce            UUID
+);
+ALTER TABLE _visus.leader ADD COLUMN IF NOT EXISTS nonce UUID;
+INSERT INTO _visus.leader (node_id) VALUES (0) ON CONFLICT DO NOTHING;
+GRANT SELECT,INSERT,UPDATE ON TABLE _visus.leader TO visus;
