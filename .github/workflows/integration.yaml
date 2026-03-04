@@ -1,0 +1,55 @@
+# Copyright 2026 The Cockroach Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+name: Integration Tests
+on:
+  push:
+    tags: ['v*.*.*']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: v26.1
+            cockroachdb: v26.1
+          - id: v25.4
+            cockroachdb: v25.4
+          - id: v24.3
+            cockroachdb: v24.3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start CockroachDB
+        working-directory: .github
+        run: docker compose --profile ${{ matrix.cockroachdb }} up -d
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Wait for CockroachDB
+        run: |
+          for i in $(seq 1 30); do
+            pg_isready -h localhost -p 26257 && break
+            sleep 1
+          done
+      - name: Integration Tests
+        run: go test -v -race -tags integration -run TestIntegration ./internal/store/...
+        env:
+          VISUS_TEST_DB_URL: "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
