@@ -15,9 +15,12 @@
 package collector
 
 import (
+	"context"
+	"errors"
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/field-eng-powertools/lease"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/server"
@@ -26,6 +29,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	log "github.com/sirupsen/logrus"
+)
+
+const (
+	leaseLifetime   = time.Minute
+	leasePoll       = 30 * time.Second
+	leaseRetryDelay = 30 * time.Second
+	leaseName       = "cluster_collector"
 )
 
 var (
@@ -64,14 +74,23 @@ type scheduledJob struct {
 
 // serverImpl manages the collections.
 type serverImpl struct {
+	adminConn database.Connection
 	config    *server.Config
-	conn      database.Connection
+	roConn    database.Connection
 	registry  *prometheus.Registry
 	scheduler *gocron.Scheduler
 	store     store.Store
 
+	// releaseLease is an optional channel used in tests to force the
+	// Singleton callback to relinquish the lease and exit the retry
+	// loop, without cancelling the server's context. Closing the
+	// channel triggers a Refresh (which deregisters cluster metrics)
+	// and returns ErrCancelSingleton so the server stops competing.
+	releaseLease chan struct{}
+
 	mu struct {
 		sync.RWMutex
+		leaseHolder   bool
 		scheduledJobs map[string]*scheduledJob
 		stopped       bool
 	}
@@ -81,7 +100,8 @@ type serverImpl struct {
 func New(
 	cfg *server.Config,
 	store store.Store,
-	conn database.Connection,
+	adminConn database.Connection,
+	roConn database.Connection,
 	registry *prometheus.Registry,
 	scheduler *gocron.Scheduler,
 ) (server.Server, error) {
@@ -99,8 +119,9 @@ func New(
 		registry.Register(collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}))
 	}
 	server := &serverImpl{
+		adminConn: adminConn,
 		config:    cfg,
-		conn:      conn,
+		roConn:    roConn,
 		registry:  registry,
 		scheduler: scheduler,
 		store:     store,
@@ -117,24 +138,84 @@ func (s *serverImpl) Refresh(ctx *stopper.Context) error {
 	return s.lockedRefresh(ctx)
 }
 
+// maybeRefresh attempts a non-blocking refresh. If the lock is already
+// held, it skips the refresh and returns nil.
+func (s *serverImpl) maybeRefresh(ctx *stopper.Context) error {
+	if !s.mu.TryLock() {
+		log.Tracef("Skipping refresh, previous run still in progress")
+		return nil
+	}
+	defer s.mu.Unlock()
+	return s.lockedRefresh(ctx)
+}
+
 // Start implements server.Server.
 func (s *serverImpl) Start(ctx *stopper.Context) error {
+	return s.start(ctx, lease.Config{
+		Conn:       s.adminConn,
+		Table:      store.LeaseTable,
+		Lifetime:   leaseLifetime,
+		Poll:       leasePoll,
+		RetryDelay: leaseRetryDelay,
+	})
+}
+
+func (s *serverImpl) start(ctx *stopper.Context, leaseCfg lease.Config) error {
 	// If we don't have a scheduler, we force a refresh and we are done.
 	if s.scheduler == nil {
 		return s.Refresh(ctx)
 	}
-	_, err := s.scheduler.Every(s.config.Refresh).
-		Do(func() {
-			if !s.mu.TryLock() {
-				log.Tracef("Skipping refresh, previous run still in progress")
-				return
+	leases, err := lease.New(ctx, leaseCfg)
+	if err != nil {
+		return errors.Join(errors.New("failed to initialize lease"), err)
+	}
+	// Start a goroutine that acquires a lease for cluster-wide tasks.
+	// Once acquired, it sets the leaseHolder flag and triggers a
+	// Refresh to schedule cluster-scoped collectors. On lease loss,
+	// Refresh unschedules them and deregisters their metrics.
+	ctx.Go(func(ctx *stopper.Context) error {
+		leases.Singleton(ctx, []string{leaseName}, func(holderCtx context.Context) error {
+			log.Info("Lease acquired, running cluster scoped collection on this node")
+			s.setLeaseHolder(true)
+			if err := s.maybeRefresh(ctx); err != nil {
+				return err
 			}
-			defer s.mu.Unlock()
-			if err := s.lockedRefresh(ctx); err != nil {
-				log.Errorf("Error refreshing metrics %s", err.Error())
+			select {
+			case <-holderCtx.Done(): // lease has been released
+				s.setLeaseHolder(false)
+				if ctx.IsStopping() {
+					return lease.ErrCancelSingleton
+				}
+				return s.maybeRefresh(ctx)
+			case <-s.releaseLease: // test-only: release lease and stop competing
+				s.setLeaseHolder(false)
+				_ = s.maybeRefresh(ctx)
+				return lease.ErrCancelSingleton
 			}
 		})
-	return err
+		return nil
+	})
+	if _, err = s.scheduler.Every(s.config.Refresh).
+		Do(func() {
+			if err := s.maybeRefresh(ctx); err != nil {
+				log.Errorf("Error refreshing metrics %s", err.Error())
+			}
+		}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *serverImpl) isLeaseHolder() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.mu.leaseHolder
+}
+
+func (s *serverImpl) setLeaseHolder(holder bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.mu.leaseHolder = holder
 }
 
 // lockedAddJob adds a new collector to the scheduler. Must be called with mu held.
@@ -179,20 +260,15 @@ func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
 		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
 		return err
 	}
-	last := time.Now().UTC().Add(-s.config.Refresh)
-	isMainNode, err := s.store.IsMainNode(ctx, last)
-	if err != nil {
-		server.RefreshErrors.WithLabelValues("metric_collector").Inc()
-		return err
-	}
 	for _, name := range names {
 		coll, err := s.store.GetCollection(ctx, name)
 		if err != nil {
 			log.Errorf("Unable to find %s: %s", name, err.Error())
 			continue
 		}
-		if !coll.Enabled || (coll.Scope == store.Cluster && !isMainNode) {
-			log.Infof("Skipping %s; enabled: %t; scope: %s; main node: %t", name, coll.Enabled, coll.Scope, isMainNode)
+		if !coll.Enabled || (coll.Scope == store.Cluster && !s.mu.leaseHolder) {
+			log.Infof("Skipping %q; enabled: %t; scope: %s; holder: %t",
+				name, coll.Enabled, coll.Scope, s.mu.leaseHolder)
 			continue
 		}
 		newCollectors[name] = true
@@ -212,11 +288,11 @@ func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
 		}
 		log.Infof("Scheduling collector %s every %d seconds", collctr.String(), collctr.GetFrequency())
 		job, err := s.scheduler.Every(collctr.GetFrequency()).Second().
-			Do(func(collctr Collector) {
+			Do(func(ctx *stopper.Context, collctr Collector) {
 				name := collctr.String()
 				log.Tracef("Running collector %s", name)
 				start := time.Now()
-				err := collctr.Collect(ctx, s.conn)
+				err := collctr.Collect(ctx, s.roConn)
 				if err != nil {
 					if s.config.VisusMetrics {
 						collectorErrors.WithLabelValues(name).Inc()
@@ -228,7 +304,7 @@ func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
 					collectorLatency.WithLabelValues(name).Observe(float64(elapsed))
 					collectorCounts.WithLabelValues(name).Inc()
 				}
-			}, collctr)
+			}, ctx, collctr)
 		if err != nil {
 			log.Errorf("error scheduling collector %s: %s", coll.Name, err.Error())
 			continue

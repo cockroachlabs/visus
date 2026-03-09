@@ -53,11 +53,11 @@ func Command() *cobra.Command {
 				return errors.New("--url must be specified")
 			}
 			// Set up database connections
-			conn, err := database.New(ctx, cfg.URL)
+			adminConn, err := database.New(ctx, cfg.URL)
 			if err != nil {
 				return err
 			}
-			store := store.New(conn)
+			store := store.New(adminConn)
 			roConn, err := database.ReadOnly(ctx, cfg.URL, cfg.AllowUnsafeInternals)
 			if err != nil {
 				return err
@@ -88,7 +88,7 @@ func Command() *cobra.Command {
 			}
 
 			// Start the collector server.
-			collServer, err := collector.New(cfg, store, roConn, registry, scheduler)
+			collServer, err := collector.New(cfg, store, adminConn, roConn, registry, scheduler)
 			if err != nil {
 				return err
 			}
@@ -133,7 +133,7 @@ func Command() *cobra.Command {
 						if err := roConn.Refresh(ctx); err != nil {
 							log.Errorf("refreshing read only db connection %q", err)
 						}
-						if err := conn.Refresh(ctx); err != nil {
+						if err := adminConn.Refresh(ctx); err != nil {
 							log.Errorf("refreshing db connection %q", err)
 						}
 					}

@@ -18,10 +18,28 @@ package store
 import (
 	"context"
 	_ "embed" // embedding sql statements
-	"time"
+	"fmt"
 
+	"github.com/cockroachdb/field-eng-powertools/lease"
 	"github.com/cockroachlabs/visus/internal/database"
 )
+
+type identifier struct {
+	name string
+}
+
+// String implements [fmt.Stringer].
+func (i identifier) String() string {
+	return i.name
+}
+
+var _ fmt.Stringer = identifier{}
+
+// LeaseTable is the identifier for the lease table in the database.
+var LeaseTable = identifier{name: "_visus.lease"}
+
+// VisusUser is the identifier for the visus database user.
+var VisusUser = identifier{name: "visus"}
 
 // Store provides the CRUD function to manage collection, histogram and scanner configurations.
 type Store interface {
@@ -49,9 +67,6 @@ type Store interface {
 	GetScanPatterns(ctx context.Context, name string) ([]Pattern, error)
 	// Init initializes the schema in the database
 	Init(ctx context.Context) error
-	// IsMainNode returns true if the current node is the main node.
-	// A main node is a node with max(id) in the cluster.
-	IsMainNode(ctx context.Context, lastUpdated time.Time) (bool, error)
 	// PutCollection adds a collection configuration to the database.
 	PutCollection(ctx context.Context, collection *Collection) error
 	// PutHistogram adds a histogram configuration to the database.
@@ -74,22 +89,10 @@ func New(conn database.Connection) Store {
 //go:embed sql/ddl.sql
 var ddlStm string
 
-//go:embed sql/mainNode.sql
-var mainNodeStm string
-
 // Init initializes the schema in the database
 func (s *store) Init(ctx context.Context) error {
-	_, err := s.conn.Exec(ctx, ddlStm)
-	return err
-}
-
-// isMainNode returns true if the node id of the node is the max(id) in the cluster.
-func (s *store) IsMainNode(ctx context.Context, lastUpdated time.Time) (bool, error) {
-	var res *bool
-	row := s.conn.QueryRow(ctx, mainNodeStm, lastUpdated)
-	err := row.Scan(&res)
-	if err != nil || res == nil {
-		return false, err
+	if _, err := s.conn.Exec(ctx, ddlStm); err != nil {
+		return err
 	}
-	return *res, nil
+	return lease.Init(ctx, s.conn, LeaseTable, VisusUser)
 }
