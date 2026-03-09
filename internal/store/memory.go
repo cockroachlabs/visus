@@ -18,7 +18,6 @@ import (
 	"context"
 	"slices"
 	"sync"
-	"time"
 )
 
 // Memory stores the configuration in memory. Used for testing.
@@ -29,8 +28,7 @@ type Memory struct {
 
 	mu struct {
 		sync.RWMutex
-		err      error // Error to return
-		mainNode bool
+		err error // Error to return
 	}
 }
 
@@ -155,13 +153,6 @@ func (m *Memory) InjectError(err error) {
 	m.mu.err = err
 }
 
-// IsMainNode implements store.Store.
-func (m *Memory) IsMainNode(_ context.Context, lastUpdated time.Time) (bool, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.mu.mainNode, m.mu.err
-}
-
 // PutCollection implements store.Store.
 func (m *Memory) PutCollection(_ context.Context, collection *Collection) error {
 	if m.Error() != nil {
@@ -187,13 +178,6 @@ func (m *Memory) PutScan(_ context.Context, scan *Scan) error {
 	}
 	m.scans.Store(scan.Name, scan)
 	return nil
-}
-
-// SetMainNode sets this store as the main node.
-func (m *Memory) SetMainNode(main bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.mu.mainNode = main
 }
 
 func (m *Memory) getNames(vals *sync.Map) ([]string, error) {

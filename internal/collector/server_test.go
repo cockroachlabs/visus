@@ -54,7 +54,7 @@ func TestRefreshCollectors(t *testing.T) {
 	registry := prometheus.NewRegistry()
 	server := &serverImpl{
 		config:    cfg,
-		conn:      conn,
+		roConn:    conn,
 		store:     mockStore,
 		scheduler: gocron.NewScheduler(time.UTC),
 		registry:  registry,
@@ -219,6 +219,11 @@ var _ pgx.Tx = &mockTx{}
 
 // Begin implements pgx.Tx.
 func (m *mockTx) Begin(ctx context.Context) (pgx.Tx, error) {
+	panic("unimplemented")
+}
+
+// BeginTx implements [database.Connection].
+func (m *mockDB) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error) {
 	panic("unimplemented")
 }
 
