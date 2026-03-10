@@ -16,7 +16,7 @@
 package server
 
 import (
-	"errors"
+	"context"
 	"os"
 	"os/signal"
 	"syscall"
@@ -30,6 +30,8 @@ import (
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
+	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
@@ -77,6 +79,44 @@ func Command() *cobra.Command {
 				log.Info("scheduler stopped")
 				return nil
 			})
+
+			// Register this node and start heartbeat.
+			hostname, err := os.Hostname()
+			if err != nil {
+				hostname = uuid.New().String()
+				log.Warnf("unable to get hostname, using generated id: %s", hostname)
+			}
+			pid := os.Getpid()
+			nodeID, err := store.RegisterNode(ctx, hostname, pid, http.Version)
+			if err != nil {
+				return errors.Wrap(err, "registering node")
+			}
+			log.Infof("registered node id=%d hostname=%s pid=%d version=%s", nodeID, hostname, pid, http.Version)
+
+			// Deregister this node on shutdown.
+			ctx.Go(func(ctx *stopper.Context) error {
+				<-ctx.Stopping()
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if err := store.DeleteNode(cleanupCtx, nodeID); err != nil {
+					log.Warnf("failed to deregister node on shutdown: %v", err)
+				} else {
+					log.Infof("deregistered node id=%d", nodeID)
+				}
+				return nil
+			})
+
+			if _, err := scheduler.Every(1).Minute().Do(func() {
+				if ctx.Err() != nil {
+					return
+				}
+				if err := store.Heartbeat(ctx, nodeID); err != nil {
+					log.Errorf("node heartbeat: %v", err)
+					return
+				}
+			}); err != nil {
+				return errors.Wrap(err, "scheduling node heartbeat")
+			}
 
 			// Start the Prometheus http endpoint.
 			httpServer, err := http.New(ctx, cfg, store, registry, scheduler)
