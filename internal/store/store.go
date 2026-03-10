@@ -59,6 +59,14 @@ type Store interface {
 	GetHistogramNames(ctx context.Context) ([]string, error)
 	// GetMetrics returns the metrics associated to a collection.
 	GetMetrics(ctx context.Context, name string) ([]Metric, error)
+	// GetNodes returns information about all registered nodes.
+	GetNodes(ctx context.Context) ([]NodeInfo, error)
+	// RegisterNode inserts a new node and returns the auto-generated ID.
+	RegisterNode(ctx context.Context, hostname string, pid int) (int64, error)
+	// Heartbeat updates the heartbeat timestamp for a node.
+	Heartbeat(ctx context.Context, id int64) error
+	// DeleteNode removes a single node by ID.
+	DeleteNode(ctx context.Context, id int64) error
 	// GetScan returns the log target with the given name.
 	GetScan(ctx context.Context, name string) (*Scan, error)
 	// GetScanNames returns the log target names present in the store.
@@ -87,11 +95,11 @@ func New(conn database.Connection) Store {
 }
 
 //go:embed sql/ddl.sql
-var ddlStm string
+var ddlStmt string
 
 // Init initializes the schema in the database
 func (s *store) Init(ctx context.Context) error {
-	if _, err := s.conn.Exec(ctx, ddlStm); err != nil {
+	if _, err := s.conn.Exec(ctx, ddlStmt); err != nil {
 		return err
 	}
 	return lease.Init(ctx, s.conn, LeaseTable, VisusUser)

@@ -18,6 +18,7 @@ import (
 	"context"
 	"slices"
 	"sync"
+	"time"
 )
 
 // Memory stores the configuration in memory. Used for testing.
@@ -25,10 +26,12 @@ type Memory struct {
 	collections *sync.Map
 	histograms  *sync.Map
 	scans       *sync.Map
+	nodes       *sync.Map
 
 	mu struct {
 		sync.RWMutex
-		err error // Error to return
+		err        error // Error to return
+		nextNodeID int64
 	}
 }
 
@@ -59,6 +62,13 @@ func (m *Memory) DeleteScan(_ context.Context, name string) error {
 	}
 	m.scans.Delete(name)
 	return nil
+}
+
+func (m *Memory) nextID() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mu.nextNodeID++
+	return m.mu.nextNodeID
 }
 
 // Error returns the injected error
@@ -111,6 +121,61 @@ func (m *Memory) GetMetrics(ctx context.Context, name string) ([]Metric, error) 
 	return coll.Metrics, nil
 }
 
+// GetNodes implements store.Store.
+func (m *Memory) GetNodes(_ context.Context) ([]NodeInfo, error) {
+	if m.Error() != nil {
+		return nil, m.Error()
+	}
+	var nodes []NodeInfo
+	m.nodes.Range(func(key any, value any) bool {
+		nodes = append(nodes, value.(NodeInfo))
+		return true
+	})
+	slices.SortFunc(nodes, func(a, b NodeInfo) int {
+		return b.Updated.Compare(a.Updated)
+	})
+	return nodes, nil
+}
+
+// RegisterNode implements store.Store.
+func (m *Memory) RegisterNode(_ context.Context, hostname string, pid int) (int64, error) {
+	if m.Error() != nil {
+		return 0, m.Error()
+	}
+	id := m.nextID()
+	m.nodes.Store(id, NodeInfo{
+		ID:       id,
+		Hostname: hostname,
+		PID:      pid,
+		Updated:  time.Now(),
+	})
+	return id, nil
+}
+
+// Heartbeat implements store.Store.
+func (m *Memory) Heartbeat(_ context.Context, id int64) error {
+	if m.Error() != nil {
+		return m.Error()
+	}
+	val, ok := m.nodes.Load(id)
+	if !ok {
+		return nil
+	}
+	n := val.(NodeInfo)
+	n.Updated = time.Now()
+	m.nodes.Store(id, n)
+	return nil
+}
+
+// DeleteNode implements store.Store.
+func (m *Memory) DeleteNode(_ context.Context, id int64) error {
+	if m.Error() != nil {
+		return m.Error()
+	}
+	m.nodes.Delete(id)
+	return nil
+}
+
 // GetScan implements store.Store.
 func (m *Memory) GetScan(_ context.Context, name string) (*Scan, error) {
 	if m.Error() != nil {
@@ -142,6 +207,7 @@ func (m *Memory) Init(_ context.Context) error {
 	m.collections = &sync.Map{}
 	m.histograms = &sync.Map{}
 	m.scans = &sync.Map{}
+	m.nodes = &sync.Map{}
 	m.InjectError(nil)
 	return nil
 }

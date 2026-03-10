@@ -95,3 +95,16 @@ GRANT SELECT ON TABLE _visus.pattern TO visus;
 
 ALTER TABLE _visus.pattern ADD COLUMN IF NOT EXISTS exclude STRING DEFAULT '';
 ALTER TABLE _visus.collection ADD COLUMN IF NOT EXISTS databases STRING DEFAULT '';
+
+ALTER TABLE _visus.node ADD COLUMN IF NOT EXISTS hostname STRING NOT NULL DEFAULT '';
+ALTER TABLE _visus.node ADD COLUMN IF NOT EXISTS pid INT NOT NULL DEFAULT 0;
+ALTER TABLE _visus.node ALTER COLUMN id SET DEFAULT unique_rowid();
+-- The TTL (2h) is intentionally much larger than the freshness filter (5min)
+-- used in listNodes.sql. The TTL is a garbage-collection mechanism to clean
+-- up rows from nodes that have been down for a long time.
+ALTER TABLE _visus.node SET (
+    ttl_expiration_expression = '((updated) + INTERVAL ''2 hours'')',
+    ttl_job_cron = '@daily'
+);
+
+GRANT DELETE ON TABLE _visus.node TO visus;
