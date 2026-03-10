@@ -27,8 +27,8 @@ type Memory struct {
 	histograms  *sync.Map
 	scans       *sync.Map
 	nodes       *sync.Map
-
-	mu struct {
+	now         func() time.Time
+	mu          struct {
 		sync.RWMutex
 		err        error // Error to return
 		nextNodeID int64
@@ -36,6 +36,14 @@ type Memory struct {
 }
 
 var _ Store = &Memory{}
+
+// NewMemoryStore creates an in-memory store with a user-supplied
+// function to determine the current time.
+func NewMemoryStore(now func() time.Time) *Memory {
+	return &Memory{
+		now: now,
+	}
+}
 
 // DeleteCollection implements store.Store.
 func (m *Memory) DeleteCollection(_ context.Context, name string) error {
@@ -150,7 +158,7 @@ func (m *Memory) RegisterNode(
 		Hostname: hostname,
 		PID:      pid,
 		Version:  version,
-		Updated:  time.Now(),
+		Updated:  m.now(),
 	})
 	return id, nil
 }
@@ -165,7 +173,7 @@ func (m *Memory) Heartbeat(_ context.Context, id int64) error {
 		return nil
 	}
 	n := val.(NodeInfo)
-	n.Updated = time.Now()
+	n.Updated = m.now()
 	m.nodes.Store(id, n)
 	return nil
 }

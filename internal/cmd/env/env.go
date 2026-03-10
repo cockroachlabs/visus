@@ -21,6 +21,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"time"
 
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
@@ -44,7 +45,13 @@ func Default() *Env {
 
 // Testing sets up an environment for testing commands.
 func Testing(ctx context.Context) *Env {
-	store := &store.Memory{}
+	return TestingWithTime(ctx, time.Now)
+}
+
+// TestingWithTime sets up an environment for testing commands
+// with a user-supplied function to determine the current time.
+func TestingWithTime(ctx context.Context, now func() time.Time) *Env {
+	store := store.NewMemoryStore(now)
 	err := store.Init(ctx)
 	if err != nil {
 		// this shouldn't happen for in memory store.

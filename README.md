@@ -424,6 +424,29 @@ Global Flags:
 Use "visus histogram [command] --help" for more information about a command.
 ```
 
+### Node management commands
+
+Use the `visus node` command to inspect registered visus nodes.
+
+```text
+Usage:
+  visus node [command]
+
+Available Commands:
+  list
+
+Flags:
+  -h, --help         help for node
+      --url string   Connection URL, of the form: postgresql://[user[:passwd]@]host[:port]/[db][?parameters...]
+
+Global Flags:
+      --logDestination string   write logs to a file, instead of stdout
+      --logFormat string        choose log output format [ fluent, text ] (default "text")
+  -v, --verbose count           increase logging verbosity to debug; repeat for trace
+
+Use "visus node [command] --help" for more information about a command.
+```
+
 ### Starting a server
 
 To start the server, use the `visus start` command:
@@ -444,6 +467,7 @@ Flags:
       --ca-cert string       Path to the  CA certificate
       --endpoint string      Endpoint for metrics. (default "/_status/vars")
   -h, --help                 help for start
+      --inotify              enable inotify for scans
       --insecure             this flag must be set if no TLS configuration is provided
       --proc-metrics         enable the collection of process metrics
       --prometheus string    prometheus endpoint

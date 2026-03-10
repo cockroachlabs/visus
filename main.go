@@ -26,6 +26,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/cmd/collection"
 	"github.com/cockroachlabs/visus/internal/cmd/histogram"
 	"github.com/cockroachlabs/visus/internal/cmd/initialize"
+	"github.com/cockroachlabs/visus/internal/cmd/node"
 	"github.com/cockroachlabs/visus/internal/cmd/scan"
 	"github.com/cockroachlabs/visus/internal/cmd/server"
 	joonix "github.com/joonix/log"
@@ -98,6 +99,7 @@ func main() {
 	root.AddCommand(collection.Command())
 	root.AddCommand(scan.Command())
 	root.AddCommand(histogram.Command())
+	root.AddCommand(node.Command())
 	root.AddCommand(initialize.Command())
 	gracePeriod := 5 * time.Second
 	stop := stopper.WithContext(context.Background())
