@@ -52,6 +52,7 @@ CREATE TABLE public.node (
     updated TIMESTAMPTZ NULL DEFAULT current_timestamp():::TIMESTAMPTZ,
     hostname STRING NOT NULL DEFAULT '':::STRING,
     pid INT8 NOT NULL DEFAULT 0:::INT8,
+    version STRING NOT NULL DEFAULT '':::STRING,
     CONSTRAINT node_pkey PRIMARY KEY (id ASC)
 ) WITH (
     ttl = 'on',

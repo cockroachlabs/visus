@@ -138,7 +138,9 @@ func (m *Memory) GetNodes(_ context.Context) ([]NodeInfo, error) {
 }
 
 // RegisterNode implements store.Store.
-func (m *Memory) RegisterNode(_ context.Context, hostname string, pid int) (int64, error) {
+func (m *Memory) RegisterNode(
+	_ context.Context, hostname string, pid int, version string,
+) (int64, error) {
 	if m.Error() != nil {
 		return 0, m.Error()
 	}
@@ -147,6 +149,7 @@ func (m *Memory) RegisterNode(_ context.Context, hostname string, pid int) (int6
 		ID:       id,
 		Hostname: hostname,
 		PID:      pid,
+		Version:  version,
 		Updated:  time.Now(),
 	})
 	return id, nil

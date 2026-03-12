@@ -19,14 +19,17 @@ import (
 	_ "embed" // embedding sql statements
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
 )
 
 // NodeInfo represents a registered node.
+// table schema: id, hostname, pid, version, updated
 type NodeInfo struct {
 	ID       int64
 	Hostname string
 	PID      int
+	Version  string
 	Updated  time.Time
 }
 
@@ -49,23 +52,15 @@ func (s *store) GetNodes(ctx context.Context) ([]NodeInfo, error) {
 		return nil, errors.WithStack(err)
 	}
 	defer rows.Close()
-	var nodes []NodeInfo
-	for rows.Next() {
-		var n NodeInfo
-		if err := rows.Scan(&n.ID, &n.Hostname, &n.PID, &n.Updated); err != nil {
-			return nil, errors.WithStack(err)
-		}
-		nodes = append(nodes, n)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, errors.WithStack(err)
-	}
-	return nodes, nil
+
+	return pgx.CollectRows(rows, pgx.RowToStructByNameLax[NodeInfo])
 }
 
 // RegisterNode inserts a new node and returns the auto-generated ID.
-func (s *store) RegisterNode(ctx context.Context, hostname string, pid int) (int64, error) {
-	row := s.conn.QueryRow(ctx, registerNodeStmt, hostname, pid)
+func (s *store) RegisterNode(
+	ctx context.Context, hostname string, pid int, version string,
+) (int64, error) {
+	row := s.conn.QueryRow(ctx, registerNodeStmt, hostname, pid, version)
 	var id int64
 	if err := row.Scan(&id); err != nil {
 		return 0, errors.WithStack(err)
