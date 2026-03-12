@@ -16,8 +16,8 @@
 
 INSERT
 INTO
-	_visus.node (hostname, pid)
+	_visus.node (hostname, pid, version)
 VALUES
-	($1, $2)
+	($1, $2, $3)
 RETURNING
 	id

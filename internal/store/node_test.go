@@ -34,11 +34,11 @@ func TestGetNodes(t *testing.T) {
 	defer cancel()
 
 	now := time.Now()
-	columns := []string{"id", "hostname", "pid", "updated"}
+	columns := []string{"id", "hostname", "pid", "version", "updated"}
 	rows := mock.NewRows(columns).
-		AddRow(int64(100), "host-a", 1234, now).
-		AddRow(int64(200), "host-b", 5678, now.Add(-1*time.Minute))
-	mock.ExpectQuery("SELECT id, hostname, pid, updated").WillReturnRows(rows)
+		AddRow(int64(100), "host-a", 1234, "v1.0.0", now).
+		AddRow(int64(200), "host-b", 5678, "v1.1.0", now.Add(-1*time.Minute))
+	mock.ExpectQuery("SELECT id, hostname, pid, version, updated").WillReturnRows(rows)
 
 	nodes, err := store.GetNodes(ctx)
 	require.NoError(t, err)
@@ -46,9 +46,11 @@ func TestGetNodes(t *testing.T) {
 	assert.Equal(t, int64(100), nodes[0].ID)
 	assert.Equal(t, "host-a", nodes[0].Hostname)
 	assert.Equal(t, 1234, nodes[0].PID)
+	assert.Equal(t, "v1.0.0", nodes[0].Version)
 	assert.Equal(t, int64(200), nodes[1].ID)
 	assert.Equal(t, "host-b", nodes[1].Hostname)
 	assert.Equal(t, 5678, nodes[1].PID)
+	assert.Equal(t, "v1.1.0", nodes[1].Version)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -60,9 +62,9 @@ func TestGetNodesEmpty(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	columns := []string{"id", "hostname", "pid", "updated"}
+	columns := []string{"id", "hostname", "pid", "version", "updated"}
 	rows := mock.NewRows(columns)
-	mock.ExpectQuery("SELECT id, hostname, pid, updated").WillReturnRows(rows)
+	mock.ExpectQuery("SELECT id, hostname, pid, version, updated").WillReturnRows(rows)
 
 	nodes, err := store.GetNodes(ctx)
 	require.NoError(t, err)
@@ -79,10 +81,10 @@ func TestRegisterNode(t *testing.T) {
 	defer cancel()
 
 	mock.ExpectQuery("INSERT INTO _visus.node").
-		WithArgs("myhost", 42).
+		WithArgs("myhost", 42, "v1.0.0").
 		WillReturnRows(mock.NewRows([]string{"id"}).AddRow(int64(999)))
 
-	id, err := store.RegisterNode(ctx, "myhost", 42)
+	id, err := store.RegisterNode(ctx, "myhost", 42, "v1.0.0")
 	require.NoError(t, err)
 	assert.Equal(t, int64(999), id)
 	require.NoError(t, mock.ExpectationsWereMet())
@@ -147,7 +149,7 @@ func TestGetNodesQueryError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	mock.ExpectQuery("SELECT id, hostname, pid, updated").
+	mock.ExpectQuery("SELECT id, hostname, pid, version, updated").
 		WillReturnError(fmt.Errorf("connection refused"))
 
 	_, err = store.GetNodes(ctx)
@@ -164,10 +166,10 @@ func TestRegisterNodeError(t *testing.T) {
 	defer cancel()
 
 	mock.ExpectQuery("INSERT INTO _visus.node").
-		WithArgs("myhost", 42).
+		WithArgs("myhost", 42, "v1.0.0").
 		WillReturnError(fmt.Errorf("duplicate key"))
 
-	_, err = store.RegisterNode(ctx, "myhost", 42)
+	_, err = store.RegisterNode(ctx, "myhost", 42, "v1.0.0")
 	assert.ErrorContains(t, err, "duplicate key")
 	require.NoError(t, mock.ExpectationsWereMet())
 }

@@ -108,3 +108,5 @@ ALTER TABLE _visus.node SET (
 );
 
 GRANT DELETE ON TABLE _visus.node TO visus;
+
+ALTER TABLE _visus.node ADD COLUMN IF NOT EXISTS version STRING NOT NULL DEFAULT '';

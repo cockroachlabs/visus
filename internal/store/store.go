@@ -62,7 +62,7 @@ type Store interface {
 	// GetNodes returns information about all registered nodes.
 	GetNodes(ctx context.Context) ([]NodeInfo, error)
 	// RegisterNode inserts a new node and returns the auto-generated ID.
-	RegisterNode(ctx context.Context, hostname string, pid int) (int64, error)
+	RegisterNode(ctx context.Context, hostname string, pid int, version string) (int64, error)
 	// Heartbeat updates the heartbeat timestamp for a node.
 	Heartbeat(ctx context.Context, id int64) error
 	// DeleteNode removes a single node by ID.

@@ -18,7 +18,7 @@
 -- This window should be at least 2x the heartbeat interval to avoid
 -- falsely marking healthy nodes as stale.
 SELECT
-	id, hostname, pid, updated
+	id, hostname, pid, version, updated
 FROM
 	_visus.node
 WHERE
