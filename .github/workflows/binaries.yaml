@@ -62,10 +62,10 @@ jobs:
       BUILDNAME: visus-${{ matrix.os }}-${{ matrix.arch }}
       OUTPUT: visus-${{ matrix.os }}-${{ matrix.arch }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: 'go.mod'
 
@@ -77,10 +77,11 @@ jobs:
           go
           build
           -v
-          -ldflags="-s -w"
+          -ldflags="-s -w -X github.com/cockroachlabs/visus/internal/http.Version=$VERSION"
           -o $OUTPUT
           .
         env:
+          VERSION: ${{ github.event.release.tag_name || github.ref_name }}
           CGO_ENABLED: 0
           GOOS: ${{ matrix.os }}
           GOARCH: ${{ matrix.arch }}

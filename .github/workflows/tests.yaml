@@ -32,33 +32,15 @@ jobs:
     name: Code Quality
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - name: Determine paths to cache
-        id: cache
-        run: |
-          echo "go-build=$(go env GOCACHE)" >> $GITHUB_OUTPUT
-          echo "go-mod=$(go env GOMODCACHE)">> $GITHUB_OUTPUT
-
-      - name: Go Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.cache.outputs.go-build }}
-            ${{ steps.cache.outputs.go-mod }}
-          key: ${{ runner.os }}-quality-${{ hashFiles('**/go.sum') }}
-
       - name: Copyright headers
         run: go run github.com/google/addlicense -c "The Cockroach Authors" -l apache -s -v  -check  -ignore '**/testdata/**/*' .
-     
-      # This action should, in general, be a no-op, given the cache above.
-      - name: Download all deps
-        run: go mod download
 
       - name: crlfmt returns no deltas
         if: ${{ !cancelled() }}
@@ -85,25 +67,12 @@ jobs:
     env:
       COVER_OUT: coverage.out
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - name: Determine paths to cache
-        id: cache
-        run: |
-          echo "go-build=$(go env GOCACHE)" >> $GITHUB_OUTPUT
-          echo "go-mod=$(go env GOMODCACHE)">> $GITHUB_OUTPUT
-
-      - name: Go Build Cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ${{ steps.cache.outputs.go-build }}
-            ${{ steps.cache.outputs.go-mod }}
-          key: ${{ runner.os }}-integration-${{ hashFiles('**/go.sum') }}
       - name: Go Tests
         run: go test -v -race -coverpkg=./internal/... -covermode=atomic -coverprofile=${{ env.COVER_OUT }} ./...
