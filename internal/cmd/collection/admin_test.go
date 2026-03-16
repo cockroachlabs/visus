@@ -260,6 +260,11 @@ func TestCommands(t *testing.T) {
 			name:          "test collection with invalid flag",
 			mock:          mockResults(t),
 		},
+		{
+			args:          []string{"test", "--url", "fake://"},
+			expectedError: "accepts 1 arg(s), received 0",
+			name:          "test collection with no args",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
