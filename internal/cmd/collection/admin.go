@@ -175,6 +175,7 @@ func testCmd(env *env.Env) *cobra.Command {
 	var allowUnsafeInternals bool
 	c := &cobra.Command{
 		Use:     "test",
+		Args:    cobra.ExactArgs(1),
 		Example: `./visus collection test  collection_name  --url "postgresql://root@localhost:26257/defaultdb?sslmode=disable" `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
