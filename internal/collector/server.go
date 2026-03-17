@@ -16,10 +16,10 @@ package collector
 
 import (
 	"context"
-	"errors"
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/field-eng-powertools/lease"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/database"

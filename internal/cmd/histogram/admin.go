@@ -18,10 +18,10 @@ package histogram
 import (
 	"sort"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/translator"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 

@@ -20,9 +20,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/collector"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"github.com/spf13/cobra"

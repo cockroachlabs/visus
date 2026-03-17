@@ -18,9 +18,9 @@ import (
 	"context"
 	_ "embed" // embedding sql statements
 
+	"github.com/cockroachdb/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pkg/errors"
 )
 
 // Histogram stores the properties for a histogram definition.

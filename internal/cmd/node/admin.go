@@ -20,8 +20,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/cmd/env"
-	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 )
 

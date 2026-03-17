@@ -16,12 +16,12 @@ package node
 
 import (
 	"context"
-	"errors"
 	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/stretchr/testify/assert"

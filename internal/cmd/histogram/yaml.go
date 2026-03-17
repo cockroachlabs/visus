@@ -15,8 +15,7 @@
 package histogram
 
 import (
-	"errors"
-
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/creasty/defaults"
 	"gopkg.in/yaml.v3"

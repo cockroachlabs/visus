@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/cmd/collection"
 	"github.com/cockroachlabs/visus/internal/cmd/histogram"
@@ -30,7 +31,6 @@ import (
 	"github.com/cockroachlabs/visus/internal/cmd/scan"
 	"github.com/cockroachlabs/visus/internal/cmd/server"
 	joonix "github.com/joonix/log"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )

@@ -17,7 +17,6 @@ package histogram
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/stretchr/testify/assert"

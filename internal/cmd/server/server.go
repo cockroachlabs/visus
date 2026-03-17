@@ -22,6 +22,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/collector"
 	"github.com/cockroachlabs/visus/internal/database"
@@ -31,7 +32,6 @@ import (
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/go-co-op/gocron"
 	"github.com/google/uuid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	log "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
