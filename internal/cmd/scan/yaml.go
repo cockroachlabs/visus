@@ -15,9 +15,9 @@
 package scan
 
 import (
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/creasty/defaults"
-	"github.com/pkg/errors"
 	"gopkg.in/yaml.v3"
 )
 

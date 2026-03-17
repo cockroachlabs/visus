@@ -25,8 +25,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/translator"
-	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"

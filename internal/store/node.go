@@ -19,8 +19,8 @@ import (
 	_ "embed" // embedding sql statements
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/jackc/pgx/v5"
-	"github.com/pkg/errors"
 )
 
 // NodeInfo represents a registered node.

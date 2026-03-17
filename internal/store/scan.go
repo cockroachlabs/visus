@@ -19,9 +19,9 @@ import (
 	_ "embed" // embedding sql statements
 	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
 

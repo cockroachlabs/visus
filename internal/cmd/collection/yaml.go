@@ -16,9 +16,9 @@
 package collection
 
 import (
-	"errors"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/creasty/defaults"
 	"github.com/jackc/pgx/v5/pgtype"
