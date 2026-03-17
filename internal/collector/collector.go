@@ -225,8 +225,14 @@ func (c *collector) Collect(ctx context.Context, conn database.Connection) error
 			if err != nil {
 				return err
 			}
-			databases = append(databases, values[0].(string))
-
+			dbName, ok := values[0].(string)
+			if !ok {
+				return errors.Errorf("%s: expected string for database name, got %T", c.name, values[0])
+			}
+			databases = append(databases, dbName)
+		}
+		if err := rows.Err(); err != nil {
+			return err
 		}
 	} else {
 		databases = []string{""}
@@ -384,6 +390,7 @@ func (c *collector) counterAdd(
 ) {
 	key, err := c.getKey(name, labels)
 	if err != nil {
+		log.Errorf("%s: unable to compute counter cache key: %s", c.name, err.Error())
 		return
 	}
 	var delta float64
