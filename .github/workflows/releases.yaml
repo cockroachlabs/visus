@@ -26,48 +26,26 @@ jobs:
     uses: ./.github/workflows/binaries.yaml
     with:
       build_binaries: true
-  upload-asset:
+  upload-binaries:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: 'write'
+    strategy:
+      matrix:
+        include:
+          - platform: linux-amd64
+          - platform: linux-arm64
+          - platform: darwin-arm64
     steps:
       - name: Download artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: visus-linux-amd64
-      - name: Upload asset
-        uses: actions/upload-release-asset@v1.0.1
+          name: visus-${{ matrix.platform }}
+      - name: Upload binary
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: visus-linux-amd64.tgz
-          asset_name: visus-${{ github.event.release.tag_name }}-linux-amd64.tgz
-          asset_content_type: binary/octet-stream
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: visus-linux-arm64
-      - name: Upload asset
-        uses: actions/upload-release-asset@v1.0.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: visus-linux-arm64.tgz
-          asset_name: visus-${{ github.event.release.tag_name }}-linux-arm64.tgz
-          asset_content_type: binary/octet-stream
-
-      - name: Download artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: visus-darwin-arm64
-      - name: Upload asset
-        uses: actions/upload-release-asset@v1.0.1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: visus-darwin-arm64.tgz
-          asset_name: visus-${{ github.event.release.tag_name }}-darwin-arm64.tgz
-          asset_content_type: binary/octet-stream
+        run: |
+          TAG=${{ github.event.release.tag_name }}
+          mv "visus-${{ matrix.platform }}.tgz" "visus-${TAG}-${{ matrix.platform }}.tgz"
+          gh -R ${{ github.repository }} release upload "${TAG}" "visus-${TAG}-${{ matrix.platform }}.tgz"
