@@ -62,10 +62,10 @@ jobs:
       BUILDNAME: visus-${{ matrix.os }}-${{ matrix.arch }}
       OUTPUT: visus-${{ matrix.os }}-${{ matrix.arch }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
         with:
           go-version-file: 'go.mod'
 
@@ -89,7 +89,7 @@ jobs:
         run: >
           tar -czvf ${{ env.BUILDNAME }}.tgz ${{ env.OUTPUT }} VERSION.txt LICENSE README.md examples/*
       - name: Upload 
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: ${{ env.BUILDNAME }}
           path: ${{ env.BUILDNAME }}.tgz
