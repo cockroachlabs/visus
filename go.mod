@@ -1,12 +1,12 @@
 module github.com/cockroachlabs/visus
 
-go 1.25.8
+go 1.26.2
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/cockroach-go/v2 v2.4.3
-	github.com/cockroachdb/crlfmt v0.3.0
-	github.com/cockroachdb/errors v1.12.0
+	github.com/cockroachdb/crlfmt v0.4.0
+	github.com/cockroachdb/errors v1.13.0
 	github.com/cockroachdb/field-eng-powertools v0.2.0
 	github.com/creasty/defaults v1.8.0
 	github.com/go-co-op/gocron v1.37.0
@@ -40,7 +40,7 @@ require (
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
-	github.com/getsentry/sentry-go v0.27.0 // indirect
+	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
