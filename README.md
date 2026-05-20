@@ -7,6 +7,11 @@ It can also be used for any database that is compatible with the Postgres wire p
 
 !["Typical visus deployment"](visus.png)
 
+> Looking to install, run, or operate visus? See
+> [docs/deployment.md](docs/deployment.md) for installation, deployment
+> patterns (binary, Docker, systemd, Kubernetes), day-to-day
+> administration, and troubleshooting.
+
 ## Metric configuration
 
 Metrics are grouped in collections and stored in the `_visus` database. Each collection uses a SQL query to collect the metrics, and determines how often the metrics need to be fetched.
