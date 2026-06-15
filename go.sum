@@ -428,14 +428,12 @@ github.com/cncf/xds/go v0.0.0-20220314180256-7f1daf1720fc/go.mod h1:eXthEFrGJvWH
 github.com/cncf/xds/go v0.0.0-20230105202645-06c439db220b/go.mod h1:eXthEFrGJvWHgFFCl3hGmgk+/aYT6PnTQLykKQRLhEs=
 github.com/cockroachdb/cockroach-go/v2 v2.4.3 h1:LJO3K3jC5WXvMePRQSJE1NsIGoFGcEx1LW83W6RAlhw=
 github.com/cockroachdb/cockroach-go/v2 v2.4.3/go.mod h1:9U179XbCx4qFWtNhc7BiWLPfuyMVQ7qdAhfrwLz1vH0=
-github.com/cockroachdb/crlfmt v0.4.0 h1:8KMp0zE54aDoUKg37JEhBueymXVeIWBWNFdK+5VATWY=
-github.com/cockroachdb/crlfmt v0.4.0/go.mod h1:SFo0GOnzviaana5OLUxLB454Bf5gyXwlRc+zabXYXyk=
+github.com/cockroachdb/crlfmt v0.5.2 h1:oRU4j0tuuIuW1rfdAMY1TDW4K++86aVHwxq2h9C9ZHw=
+github.com/cockroachdb/crlfmt v0.5.2/go.mod h1:fJ2Lp/cS/s84A7pvsuhtflmYJnz8JnxnjyIt5ZCigbo=
 github.com/cockroachdb/errors v1.13.0 h1:BoCcJeiP9hpBJDETkX19qi8Tb8So37srSsp3stTaDMQ=
 github.com/cockroachdb/errors v1.13.0/go.mod h1:bjxt/4E5+OyuAnacpTIU9rn2mzPu1VlthvHP+xpROq0=
 github.com/cockroachdb/field-eng-powertools v0.2.0 h1:9S+2hQXexZg24PP3Und9SRUWZUcojFeO5eerkNy/TWk=
 github.com/cockroachdb/field-eng-powertools v0.2.0/go.mod h1:+EhiP+YyVFPWlDKf+NaMfeDVOUBbFX6T0dk2VohoHHQ=
-github.com/cockroachdb/gostdlib v1.19.0 h1:cSISxkVnTlWhTkyple/T6NXzOi5659FkhxvUgZv+Eb0=
-github.com/cockroachdb/gostdlib v1.19.0/go.mod h1:+dqqpARXbE/gRDEhCak6dm0l14AaTymPZUKMfURjBtY=
 github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b h1:r6VH0faHjZeQy818SGhaone5OnYfxFR/+AzdY3sf5aE=
 github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b/go.mod h1:Vz9DsVWQQhf3vs21MhPMZpMGSht7O/2vFW2xusFUVOs=
 github.com/cockroachdb/redact v1.1.5 h1:u1PMllDkdFfPWaNGMyLD1+so+aq3uUItthCFqzwPJ30=

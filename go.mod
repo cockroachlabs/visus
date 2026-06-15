@@ -5,7 +5,7 @@ go 1.26.2
 require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/cockroach-go/v2 v2.4.3
-	github.com/cockroachdb/crlfmt v0.4.0
+	github.com/cockroachdb/crlfmt v0.5.2
 	github.com/cockroachdb/errors v1.13.0
 	github.com/cockroachdb/field-eng-powertools v0.2.0
 	github.com/creasty/defaults v1.8.0
@@ -35,7 +35,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bmatcuk/doublestar/v4 v4.0.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cockroachdb/gostdlib v1.19.0 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
