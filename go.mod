@@ -6,7 +6,7 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/cockroachdb/cockroach-go/v2 v2.4.3
 	github.com/cockroachdb/crlfmt v0.4.0
-	github.com/cockroachdb/errors v1.13.0
+	github.com/cockroachdb/errors v1.14.0
 	github.com/cockroachdb/field-eng-powertools v0.2.0
 	github.com/creasty/defaults v1.8.0
 	github.com/go-co-op/gocron v1.37.0
@@ -43,7 +43,7 @@ require (
 	github.com/getsentry/sentry-go v0.46.0 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
-	github.com/golang/protobuf v1.5.3 // indirect
+	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
