@@ -53,8 +53,6 @@ func new(ctx context.Context, URL string, ro bool, allowUnsafeInternals bool) (*
 func pgxPool(
 	ctx context.Context, URL string, ro bool, allowUnsafeInternals bool,
 ) (*pgxpool.Pool, error) {
-	var pool *pgxpool.Pool
-	sleepTime := int64(5)
 	poolConfig, err := pgxpool.ParseConfig(URL)
 	if err != nil {
 		log.Fatal(err)
@@ -76,24 +74,38 @@ func pgxPool(
 			return nil
 		}
 	}
+	sleepTime := int64(5)
 	for {
-		pool, err = pgxpool.NewWithConfig(ctx, poolConfig)
-		if err != nil {
-			log.Error(err)
-			log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
-			err := sleep(ctx, sleepTime)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			break
+		pool, err := connectAndPing(ctx, poolConfig)
+		if err == nil {
+			log.Debugf("new pool %s (readonly: %t)", poolConfig.ConnString(), ro)
+			return pool, nil
+		}
+		log.Error(err)
+		log.Warnf("Unable to connect to the db. Retrying in %d seconds", sleepTime)
+		if err := sleep(ctx, sleepTime); err != nil {
+			return nil, err
 		}
 		if sleepTime < int64(60) {
 			sleepTime += int64(5)
 		}
 	}
-	log.Debugf("new pool %s (readonly: %t)", poolConfig.ConnString(), ro)
-	return pool, err
+}
+
+// connectAndPing creates a new pool and verifies the database is reachable.
+// pgxpool.NewWithConfig is lazy and does not open a connection, so a ping is
+// required to surface connectivity failures eagerly. The returned pool is
+// closed if the ping fails.
+func connectAndPing(ctx context.Context, cfg *pgxpool.Config) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }
 
 func sleep(ctx context.Context, seconds int64) error {
