@@ -19,6 +19,8 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"net/http"
+	"net/http/httptest"
 	_ "net/http/pprof"
 	"os"
 	"testing"
@@ -29,9 +31,39 @@ import (
 	"github.com/cockroachlabs/visus/internal/metric"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// disconnectedResponseWriter simulates a client that has disconnected: every
+// write fails, mimicking the "client disconnected" error returned by the HTTP/2
+// server once the peer is gone. It records whether WriteHeader was called so
+// tests can assert the handler does not try to send an error status back to a
+// client that is no longer listening.
+type disconnectedResponseWriter struct {
+	header      http.Header
+	wroteHeader bool
+	statusCode  int
+}
+
+var _ http.ResponseWriter = &disconnectedResponseWriter{}
+
+func (d *disconnectedResponseWriter) Header() http.Header {
+	if d.header == nil {
+		d.header = http.Header{}
+	}
+	return d.header
+}
+
+func (d *disconnectedResponseWriter) Write([]byte) (int, error) {
+	return 0, errors.New("client disconnected")
+}
+
+func (d *disconnectedResponseWriter) WriteHeader(statusCode int) {
+	d.wroteHeader = true
+	d.statusCode = statusCode
+}
 
 // TestRefreshHistograms verifies we reload the histograms from the store.
 func TestRefreshHistograms(t *testing.T) {
@@ -197,4 +229,75 @@ func TestRefreshTLSConfig(t *testing.T) {
 	cert, err = server.keyPair.getCertificateFunc()(nil)
 	r.NoError(err)
 	a.Equal(expectedCert.Certificate, cert.Certificate)
+}
+
+// newTestRegistry returns a registry with a single registered gauge so the
+// metrics handler has something to gather.
+func newTestRegistry(t *testing.T) *prometheus.Registry {
+	t.Helper()
+	registry := prometheus.NewRegistry()
+	gauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "visus_test_gauge",
+		Help: "gauge used by the metrics handler tests",
+	})
+	gauge.Set(1)
+	require.NoError(t, registry.Register(gauge))
+	return registry
+}
+
+// TestMetricsHandler verifies that a normal scrape returns the gathered metrics.
+func TestMetricsHandler(t *testing.T) {
+	a := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := stopper.WithContext(ctx)
+	server := &serverImpl{
+		registry: newTestRegistry(t),
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	server.metricsHandler(stop)(rec, req)
+	a.Equal(http.StatusOK, rec.Code)
+	a.Contains(rec.Body.String(), "visus_test_gauge")
+}
+
+// TestMetricsHandlerClientDisconnect verifies that when the client disconnects
+// mid-response the handler stops writing and does not try to send an error
+// status back to the client that is no longer listening.
+func TestMetricsHandlerClientDisconnect(t *testing.T) {
+	a := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := stopper.WithContext(ctx)
+	server := &serverImpl{
+		registry: newTestRegistry(t),
+	}
+	w := &disconnectedResponseWriter{}
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	// The handler must not panic and must not attempt to write an error status
+	// back to the disconnected client.
+	server.metricsHandler(stop)(w, req)
+	a.False(w.wroteHeader, "handler should not write a status back to a disconnected client")
+}
+
+// TestMetricsHandlerCopyError verifies that when copying from the upstream
+// source fails the handler returns early without writing gathered metrics.
+func TestMetricsHandlerCopyError(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stop := stopper.WithContext(ctx)
+	// A file source that does not exist makes Copy fail on open.
+	writer, err := metric.NewWriter("file:///nonexistent-source.txt", nil, nil)
+	r.NoError(err)
+	server := &serverImpl{
+		registry:      newTestRegistry(t),
+		metricsWriter: writer,
+	}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/metrics", nil)
+	server.metricsHandler(stop)(rec, req)
+	// Copy failed, so we return before gathering registry metrics.
+	a.NotContains(rec.Body.String(), "visus_test_gauge")
 }

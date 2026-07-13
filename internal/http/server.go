@@ -129,24 +129,7 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 	if err != nil {
 		return err
 	}
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer r.Body.Close()
-		if s.metricsWriter != nil {
-			s.metricsWriter.Copy(ctx, w)
-		}
-		metrics, err := s.registry.Gather()
-		if err != nil {
-			s.errorResponse(w, "Error gathering metrics", err)
-			return
-		}
-		for _, m := range metrics {
-			_, err = expfmt.MetricFamilyToText(w, m)
-			if err != nil {
-				s.errorResponse(w, "Error gathering metrics", err)
-			}
-		}
-
-	})
+	handler := http.HandlerFunc(s.metricsHandler(ctx))
 
 	http.Handle(s.config.Endpoint, gziphandler.GzipHandler(handler))
 	s.debugInfo()
@@ -178,6 +161,41 @@ func (s *serverImpl) Start(ctx *stopper.Context) error {
 		return nil
 	})
 	return nil
+}
+
+// metricsHandler returns the handler that serves the metrics endpoint. It first
+// copies the metrics fetched from the upstream source (applying any histogram
+// translators) and then appends the metrics gathered from the local registry.
+func (s *serverImpl) metricsHandler(ctx *stopper.Context) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
+		if s.metricsWriter != nil {
+			// A Copy failure is usually the upstream source being unreachable
+			// or returning malformed metrics, which is actionable, so it is
+			// logged at error level. It can also be the client disconnecting
+			// mid-response, in which case the stream is already broken and we
+			// cannot report anything back either way.
+			if err := s.metricsWriter.Copy(ctx, w); err != nil {
+				log.Errorf("Error copying metrics from source: %s", err.Error())
+				return
+			}
+		}
+		metrics, err := s.registry.Gather()
+		if err != nil {
+			s.errorResponse(w, "Error gathering metrics", err)
+			return
+		}
+		for _, m := range metrics {
+			// A write failure here means the client has disconnected, which is
+			// an expected event (for example a scrape timeout). We stop writing
+			// and log at debug level rather than trying to send an error to a
+			// client that is no longer listening.
+			if _, err := expfmt.MetricFamilyToText(w, m); err != nil {
+				log.Debugf("Stopped writing metrics to client: %s", err.Error())
+				return
+			}
+		}
+	}
 }
 
 func (s *serverImpl) errorResponse(w http.ResponseWriter, msg string, err error) {

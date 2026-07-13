@@ -115,7 +115,9 @@ func (w *Writer) Copy(ctx context.Context, out io.Writer) error {
 	for _, mf := range metricFamilies {
 		if mf.GetType() == dto.MetricType_HISTOGRAM && translators != nil {
 			for _, translator := range translators {
-				translator.Translate(ctx, mf, out)
+				if err := translator.Translate(ctx, mf, out); err != nil {
+					return err
+				}
 			}
 		} else {
 			_, err := expfmt.MetricFamilyToText(out, mf)
