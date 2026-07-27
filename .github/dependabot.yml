@@ -23,3 +23,7 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "gomod"
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
