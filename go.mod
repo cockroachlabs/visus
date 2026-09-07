@@ -18,8 +18,8 @@ require (
 	github.com/nxadm/tail v1.4.11
 	github.com/pashagolub/pgxmock/v3 v3.4.0
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
-	github.com/prometheus/common v0.70.1
+	github.com/prometheus/client_model v0.6.3
+	github.com/prometheus/common v0.71.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
@@ -61,7 +61,7 @@ require (
 	golang.org/x/mod v0.39.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.40.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	google.golang.org/genproto v0.0.0-20231030173426-d783a09b4405 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 )
