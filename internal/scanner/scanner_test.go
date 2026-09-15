@@ -57,6 +57,9 @@ var maxExpected string
 //go:embed testdata/cache.txt
 var cacheExpected string
 
+//go:embed testdata/nonmatching.txt
+var nonmatchingExpected string
+
 // TestScanner verifies we can produce metrics from a test file.
 func TestScanner(t *testing.T) {
 	tests := []struct {
@@ -164,6 +167,29 @@ func TestScanner(t *testing.T) {
 			},
 			map[string]string{
 				"crdb_auth": authExpected,
+			},
+		},
+		{
+			// Real CockroachDB logs interleave lines that do not start with
+			// the [FEIW]yymmdd prefix, most commonly a panic stack trace.
+			// This verifies those lines are silently skipped rather than
+			// miscounted or treated as parse errors.
+			"non-matching prefix lines are skipped",
+			&store.Scan{
+				Enabled: true,
+				Format:  store.CRDBv2,
+				Name:    "crdb",
+				Path:    "./testdata/nonmatching.log",
+				Patterns: []store.Pattern{
+					{
+						Name:  "all",
+						Regex: "",
+						Help:  "all events",
+					},
+				},
+			},
+			map[string]string{
+				"crdb_all": nonmatchingExpected,
 			},
 		},
 	}
