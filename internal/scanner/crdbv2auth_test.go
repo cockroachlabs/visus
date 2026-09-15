@@ -71,6 +71,12 @@ func TestParseAuthLine(t *testing.T) {
 			},
 			"",
 		},
+		{
+			"truncated_json",
+			`I250407 20:22:58.997928 731936 4@util/log/event_log.go:39 ⋮ [T1,Vsystem,n1,client=127.0.0.1:53480,hostssl,user=‹roachprod›] 15 ={"Timestamp":1744057378997924809,"EventType":"client_authentication_ok"`,
+			nil,
+			"unexpected end of JSON input",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -78,6 +84,7 @@ func TestParseAuthLine(t *testing.T) {
 			res, err := parseAuthLine([]byte(tt.line))
 			if tt.wantErr != "" {
 				a.EqualError(err, tt.wantErr)
+				return
 			}
 			a.NoError(err)
 			a.Equal(tt.want, res)
