@@ -12,24 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build integration
+
 package collector
 
 import (
 	"context"
-	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/cockroachdb/field-eng-powertools/stopper"
-	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/cockroachlabs/visus/internal/testutil"
 	"github.com/go-co-op/gocron"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pashagolub/pgxmock/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,8 +43,18 @@ func TestRefreshCollectors(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+
+	conn, _ := testutil.NewDatabase(ctx, t)
+	_, err := conn.Exec(ctx, "CREATE TABLE databases (database STRING, count FLOAT8)")
+	r.NoError(err)
+	_, err = conn.Exec(ctx, "INSERT INTO databases VALUES ('test', 1)")
+	r.NoError(err)
+	_, err = conn.Exec(ctx, "CREATE TABLE statements (statement STRING, count FLOAT8)")
+	r.NoError(err)
+	_, err = conn.Exec(ctx, "INSERT INTO statements VALUES ('st1', 1)")
+	r.NoError(err)
+
 	stop := stopper.WithContext(ctx)
-	conn := &mockDB{}
 	mockStore := &store.Memory{}
 	mockStore.Init(ctx)
 	cfg := &server.Config{}
@@ -86,7 +93,7 @@ func TestRefreshCollectors(t *testing.T) {
 		Name:  "databases",
 		Query: dbQuery,
 	}
-	err := mockStore.PutCollection(ctx, dbColl)
+	err = mockStore.PutCollection(ctx, dbColl)
 	r.NoError(err)
 	err = server.Refresh(stop)
 	r.NoError(err)
@@ -162,123 +169,4 @@ func TestRefreshCollectors(t *testing.T) {
 	a.Equal(sqlJob.collector.GetLastModified(), sqlTime)
 	a.Equal(1, len(server.scheduler.Jobs()))
 
-}
-
-type mockDB struct {
-	dbcount, statscount atomic.Int32
-}
-
-var _ database.Connection = &mockDB{}
-
-// Begin implements database.Connection.
-func (m *mockDB) Begin(ctx context.Context) (pgx.Tx, error) {
-	return &mockTx{
-		db: m,
-	}, nil
-}
-
-// Exec implements database.Connection.
-func (m *mockDB) Exec(
-	ctx context.Context, sql string, arguments ...interface{},
-) (pgconn.CommandTag, error) {
-	panic("unimplemented")
-}
-
-// Query implements database.Connection.
-func (m *mockDB) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
-	conn, err := pgxmock.NewConn()
-	if err != nil {
-		return nil, err
-	}
-	query := conn.ExpectQuery(strings.Replace(sql, "LIMIT $1", ".+", 1)).WithArgs(1)
-	switch sql {
-	case dbQuery:
-		m.dbcount.Add(1)
-		res := conn.NewRows([]string{"database", "count"})
-		res.AddRow("test", int(m.dbcount.Load()))
-		query.WillReturnRows(res)
-	case statsQuery:
-		m.statscount.Add(1)
-		res := conn.NewRows([]string{"statement", "count"})
-		res.AddRow("st1", int(m.statscount.Load()))
-		query.WillReturnRows(res)
-	}
-	return conn.Query(ctx, sql, args...)
-}
-
-// QueryRow implements database.Connection.
-func (m *mockDB) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
-	panic("unimplemented")
-}
-
-type mockTx struct {
-	db *mockDB
-}
-
-var _ pgx.Tx = &mockTx{}
-
-// Begin implements pgx.Tx.
-func (m *mockTx) Begin(ctx context.Context) (pgx.Tx, error) {
-	panic("unimplemented")
-}
-
-// BeginTx implements [database.Connection].
-func (m *mockDB) BeginTx(ctx context.Context, txOptions pgx.TxOptions) (pgx.Tx, error) {
-	panic("unimplemented")
-}
-
-// Commit implements pgx.Tx.
-func (m *mockTx) Commit(ctx context.Context) error {
-	return nil
-}
-
-// Conn implements pgx.Tx.
-func (m *mockTx) Conn() *pgx.Conn {
-	panic("unimplemented")
-}
-
-// CopyFrom implements pgx.Tx.
-func (m *mockTx) CopyFrom(
-	ctx context.Context, tableName pgx.Identifier, columnNames []string, rowSrc pgx.CopyFromSource,
-) (int64, error) {
-	panic("unimplemented")
-}
-
-// Exec implements pgx.Tx.
-func (m *mockTx) Exec(
-	ctx context.Context, sql string, args ...any,
-) (commandTag pgconn.CommandTag, err error) {
-	return m.db.Exec(ctx, sql, args...)
-}
-
-// LargeObjects implements pgx.Tx.
-func (m *mockTx) LargeObjects() pgx.LargeObjects {
-	panic("unimplemented")
-}
-
-// Prepare implements pgx.Tx.
-func (m *mockTx) Prepare(
-	ctx context.Context, name string, sql string,
-) (*pgconn.StatementDescription, error) {
-	panic("unimplemented")
-}
-
-// Query implements pgx.Tx.
-func (m *mockTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error) {
-	return m.db.Query(ctx, sql, args...)
-}
-
-// QueryRow implements pgx.Tx.
-func (m *mockTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row {
-	return m.db.QueryRow(ctx, sql, args...)
-}
-
-// Rollback implements pgx.Tx.
-func (m *mockTx) Rollback(ctx context.Context) error {
-	return nil
-}
-
-// SendBatch implements pgx.Tx.
-func (m *mockTx) SendBatch(ctx context.Context, b *pgx.Batch) pgx.BatchResults {
-	panic("unimplemented")
 }

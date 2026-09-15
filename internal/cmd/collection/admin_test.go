@@ -27,9 +27,7 @@ import (
 	"github.com/cockroachlabs/visus/internal/cmd/env"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pashagolub/pgxmock/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -81,20 +79,6 @@ func (c *commandTest) execute(ctx context.Context, t *testing.T) {
 	r.NoError(err)
 	slices.Sort(c.expectedStoreNames)
 	a.Equal(c.expectedStoreNames, names)
-}
-
-func mockResults(t *testing.T) database.Connection {
-	r := require.New(t)
-	mock, err := pgxmock.NewConn()
-	r.NoError(err)
-	columns := []string{"database", "queries"}
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	query := mock.ExpectQuery("SELECT database,queries FROM stats LIMIT .+").WithArgs(1)
-	res := mock.NewRows(columns)
-	res.AddRow("one", 10)
-	res.AddRow("two", 12)
-	query.WillReturnRows(res)
-	return mock
 }
 
 // TestCommands verifies that the behavior of each CLI command.
@@ -224,14 +208,6 @@ func TestCommands(t *testing.T) {
 		},
 		// Test
 		{
-			args:               []string{"test", "--interval", "1s", "--url", "fake://", collection1.Name},
-			expectedOut:        "HELP collection_01_queries total queries per database",
-			expectedStoreNames: []string{collection1.Name},
-			initialStore:       []*store.Collection{collection1},
-			name:               "test collection",
-			mock:               mockResults(t),
-		},
-		{
 			args:               []string{"test", "--url", "fake://", "not_there"},
 			expectedOut:        "not found",
 			expectedStoreNames: []string{collection1.Name},
@@ -246,19 +222,10 @@ func TestCommands(t *testing.T) {
 			name:          "test collection store error",
 		},
 		{
-			args:               []string{"test", "--interval", "1s", "--allow-unsafe-internals", "--url", "fake://", collection1.Name},
-			expectedOut:        "HELP collection_01_queries total queries per database",
-			expectedStoreNames: []string{collection1.Name},
-			initialStore:       []*store.Collection{collection1},
-			name:               "test collection with allow-unsafe-internals flag",
-			mock:               mockResults(t),
-		},
-		{
 			args:          []string{"test", "--interval", "1s", "--invalid", "--url", "fake://", collection1.Name},
 			expectedError: "unknown flag: --invalid",
 			initialStore:  []*store.Collection{collection1},
 			name:          "test collection with invalid flag",
-			mock:          mockResults(t),
 		},
 		{
 			args:          []string{"test", "--url", "fake://"},

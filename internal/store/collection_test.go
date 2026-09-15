@@ -12,190 +12,142 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+//go:build integration
+
+package store_test
 
 import (
 	"context"
-	_ "embed"
 	"testing"
 	"time"
 
+	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/cockroachlabs/visus/internal/testutil"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pashagolub/pgxmock/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetCollectionNames(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	columns := []string{"name"}
-	tests := [][]string{
-		{},
-		{"test1", "test2"},
-		{"test1", "test2", "test3"},
-	}
-	for _, tt := range tests {
-		query := mock.ExpectQuery("select name from _visus.collection.+")
-		res := mock.NewRows(columns)
-		for _, row := range tt {
-			res.AddRow(row)
-		}
-		query.WillReturnRows(res)
-		names, err := store.GetCollectionNames(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, names, tt)
+// testCollection returns a minimal, valid collection configuration for the
+// given name.
+func testCollection(name string) *store.Collection {
+	return &store.Collection{
+		Enabled:   true,
+		Frequency: pgtype.Interval{Microseconds: 100000, Valid: true},
+		Labels:    []string{"test"},
+		MaxResult: 10,
+		Metrics:   []store.Metric{},
+		Name:      name,
+		Query:     "SELECT * FROM test limit %1",
+		Scope:     store.Node,
 	}
 }
 
-func TestDeleteCollection(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+// TestGetCollectionNames verifies that the list of collection names tracks
+// the collections that have been put into the store.
+func TestGetCollectionNames(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	mock.ExpectBegin()
-	mock.ExpectExec("delete from _visus.metric where collection = .+").WithArgs("test").
-		WillReturnResult(pgxmock.NewResult("DELETE", 0))
-	mock.ExpectExec("delete from _visus.collection where name = .+").WithArgs("test").
-		WillReturnResult(pgxmock.NewResult("DELETE", 1))
-	mock.ExpectCommit()
-	err = store.DeleteCollection(ctx, "test")
-	require.NoError(t, err)
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	names, err := st.GetCollectionNames(ctx)
+	r.NoError(err)
+	assert.Empty(t, names)
+
+	r.NoError(st.PutCollection(ctx, testCollection("test1")))
+	names, err = st.GetCollectionNames(ctx)
+	r.NoError(err)
+	assert.Equal(t, []string{"test1"}, names)
+
+	r.NoError(st.PutCollection(ctx, testCollection("test2")))
+	names, err = st.GetCollectionNames(ctx)
+	r.NoError(err)
+	assert.ElementsMatch(t, []string{"test1", "test2"}, names)
+}
+
+// TestDeleteCollection verifies that deleting a collection removes it, and
+// its metrics, from the store.
+func TestDeleteCollection(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	coll := testCollection("test")
+	coll.Metrics = []store.Metric{{Name: "metric1", Kind: store.Counter, Help: "help"}}
+	r.NoError(st.PutCollection(ctx, coll))
+
+	r.NoError(st.DeleteCollection(ctx, "test"))
+
+	got, err := st.GetCollection(ctx, "test")
+	r.NoError(err)
+	assert.Nil(t, got)
+	metrics, err := st.GetMetrics(ctx, "test")
+	r.NoError(err)
+	assert.Empty(t, metrics)
 }
 
 // TestGetCollection verifies the GetCollection and, indirectly, the GetMetrics functions.
 func TestGetCollection(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	type test struct {
-		name       string
-		collection *Collection
-		wantError  bool
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	got, err := st.GetCollection(ctx, "none")
+	r.NoError(err)
+	assert.Nil(t, got)
+
+	noMetrics := testCollection("no_metrics")
+	withMetrics := testCollection("with_metrics")
+	withMetrics.Labels = []string{"test2"}
+	withMetrics.Metrics = []store.Metric{
+		{Name: "metric1", Kind: store.Counter, Help: "metric1 is a counter"},
+		{Name: "metric2", Kind: store.Gauge, Help: "metric2 is a gauge"},
 	}
 
-	tests := []test{
-		{"none", nil, false},
-		{"no_metrics", &Collection{
-			Enabled:      true,
-			Frequency:    pgtype.Interval{Microseconds: 100000},
-			Labels:       []string{"test"},
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			MaxResult:    10,
-			Metrics:      []Metric{},
-			Name:         "no_metrics",
-			Query:        "SELECT * FROM test limit %1",
-			Scope:        Node,
-		}, false},
-		{"with_metrics", &Collection{
-			Enabled:      true,
-			Frequency:    pgtype.Interval{Microseconds: 100000},
-			Labels:       []string{"test2"},
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			MaxResult:    10,
-			Metrics: []Metric{
-				{"metric1", Counter, "metric1 is a counter"},
-				{"metric2", Gauge, "metric2 is a gauge"},
-			},
-			Name:  "with_metrics",
-			Query: "SELECT * FROM test limit %1",
-			Scope: Node,
-		}, false},
-	}
-	for _, tt := range tests {
-		mock, err := pgxmock.NewConn()
-		store := New(mock)
-		require.NoError(t, err)
-		collQuery := mock.ExpectQuery("select name, updated, enabled, scope, maxResults, frequency, databases, query, labels from _visus.collection where name = .+").
-			WithArgs(tt.name)
-		res := mock.NewRows([]string{"name", "updated", "enabled", "scope", "maxResults", "frequency", "databases", "query", "labels"})
-		if tt.collection != nil {
-			res.AddRow(
-				tt.name, tt.collection.LastModified,
-				tt.collection.Enabled, tt.collection.Scope,
-				tt.collection.MaxResult, tt.collection.Frequency,
-				tt.collection.Databases,
-				tt.collection.Query, tt.collection.Labels,
-			)
-		}
-		collQuery.WillReturnRows(res)
-		metricQuery := mock.ExpectQuery("select metric,kind, help from _visus.metric where collection = .+").
-			WithArgs(tt.name)
-		res = mock.NewRows([]string{"metric", "kind", "help"})
-		if tt.collection != nil {
-			for _, row := range tt.collection.Metrics {
-				res.AddRow(row.Name, row.Kind, row.Help)
-			}
-		}
-		metricQuery.WillReturnRows(res)
-		coll, err := store.GetCollection(ctx, tt.name)
-		require.NoError(t, err)
-		assert.Equal(t, tt.collection, coll)
-		mock.Close(ctx)
+	for _, want := range []*store.Collection{noMetrics, withMetrics} {
+		r.NoError(st.PutCollection(ctx, want))
+
+		got, err := st.GetCollection(ctx, want.Name)
+		r.NoError(err)
+		r.NotNil(got)
+		assert.WithinDuration(t, time.Now(), got.LastModified.Time, time.Minute)
+		got.LastModified = want.LastModified
+		assert.Equal(t, want, got)
 	}
 }
 
+// TestPutCollection verifies that a collection can be inserted, and that
+// putting it again with different metrics replaces the previous ones.
 func TestPutCollection(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	type test struct {
-		name       string
-		collection *Collection
-		wantError  bool
-	}
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
 
-	tests := []test{
-		{"no_metrics", &Collection{
-			Enabled:      true,
-			Frequency:    pgtype.Interval{Microseconds: 100000},
-			Labels:       []string{"test"},
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			MaxResult:    10,
-			Metrics:      []Metric{},
-			Name:         "no_metrics",
-			Query:        "SELECT * FROM test limit %1",
-			Scope:        Node,
-		}, false},
-		{"with_metrics", &Collection{
-			Enabled:      true,
-			Frequency:    pgtype.Interval{Microseconds: 100000},
-			Labels:       []string{"test2"},
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			MaxResult:    10,
-			Metrics: []Metric{
-				{"metric1", Counter, "metric1 is a counter"},
-				{"metric2", Gauge, "metric2 is a gauge"},
-			},
-			Name:  "with_metrics",
-			Query: "SELECT * FROM test limit %1",
-			Scope: Node,
-		}, false},
+	coll := testCollection("with_metrics")
+	coll.Metrics = []store.Metric{
+		{Name: "metric1", Kind: store.Counter, Help: "metric1 is a counter"},
+		{Name: "metric2", Kind: store.Gauge, Help: "metric2 is a gauge"},
 	}
-	for _, tt := range tests {
-		mock, err := pgxmock.NewConn()
-		store := New(mock)
-		require.NoError(t, err)
-		mock.ExpectBegin()
-		mock.ExpectExec("delete from _visus.metric where collection = .+").WithArgs(tt.collection.Name).
-			WillReturnResult(pgxmock.NewResult("DELETE", 0))
-		mock.ExpectExec(
-			`UPSERT INTO _visus.collection \(name, enabled, scope, maxResults, frequency, databases, query, labels, updated\) VALUES .+`).
-			WithArgs(tt.collection.Name, tt.collection.Enabled, tt.collection.Scope,
-				tt.collection.MaxResult, tt.collection.Frequency,
-				tt.collection.Databases, tt.collection.Query,
-				tt.collection.Labels).
-			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
-		for _, metric := range tt.collection.Metrics {
-			mock.ExpectExec(`INSERT INTO _visus.metric \(collection,metric,kind,help\) VALUES .+`).
-				WithArgs(tt.collection.Name, metric.Name, metric.Kind, metric.Help).
-				WillReturnResult(pgxmock.NewResult("INSERT", 1))
-		}
-		mock.ExpectCommit()
-		err = store.PutCollection(ctx, tt.collection)
-		require.NoError(t, err)
-		mock.Close(ctx)
-	}
+	r.NoError(st.PutCollection(ctx, coll))
+
+	got, err := st.GetCollection(ctx, coll.Name)
+	r.NoError(err)
+	r.NotNil(got)
+	got.LastModified = coll.LastModified
+	assert.Equal(t, coll, got)
+
+	// Putting the collection again with fewer metrics must replace, not
+	// append to, the previous set.
+	coll.Metrics = []store.Metric{{Name: "metric1", Kind: store.Counter, Help: "metric1 is a counter"}}
+	r.NoError(st.PutCollection(ctx, coll))
+
+	got, err = st.GetCollection(ctx, coll.Name)
+	r.NoError(err)
+	r.NotNil(got)
+	got.LastModified = coll.LastModified
+	assert.Equal(t, coll, got)
 }

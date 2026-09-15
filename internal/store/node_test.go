@@ -12,181 +12,127 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+//go:build integration
+
+package store_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 	"time"
 
-	"github.com/pashagolub/pgxmock/v5"
+	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/cockroachlabs/visus/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetNodes(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	now := time.Now()
-	columns := []string{"id", "hostname", "pid", "version", "updated"}
-	rows := mock.NewRows(columns).
-		AddRow(int64(100), "host-a", 1234, "v1.0.0", now).
-		AddRow(int64(200), "host-b", 5678, "v1.1.0", now.Add(-1*time.Minute))
-	mock.ExpectQuery("SELECT id, hostname, pid, version, updated").WillReturnRows(rows)
-
-	nodes, err := store.GetNodes(ctx)
-	require.NoError(t, err)
-	require.Len(t, nodes, 2)
-	assert.Equal(t, int64(100), nodes[0].ID)
-	assert.Equal(t, "host-a", nodes[0].Hostname)
-	assert.Equal(t, 1234, nodes[0].PID)
-	assert.Equal(t, "v1.0.0", nodes[0].Version)
-	assert.Equal(t, int64(200), nodes[1].ID)
-	assert.Equal(t, "host-b", nodes[1].Hostname)
-	assert.Equal(t, 5678, nodes[1].PID)
-	assert.Equal(t, "v1.1.0", nodes[1].Version)
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
 func TestGetNodesEmpty(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
 
-	columns := []string{"id", "hostname", "pid", "version", "updated"}
-	rows := mock.NewRows(columns)
-	mock.ExpectQuery("SELECT id, hostname, pid, version, updated").WillReturnRows(rows)
-
-	nodes, err := store.GetNodes(ctx)
-	require.NoError(t, err)
+	nodes, err := st.GetNodes(ctx)
+	r.NoError(err)
 	assert.Empty(t, nodes)
-	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-func TestRegisterNode(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+func TestRegisterNodeAndGetNodes(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
 
-	mock.ExpectQuery("INSERT INTO _visus.node").
-		WithArgs("myhost", 42, "v1.0.0").
-		WillReturnRows(mock.NewRows([]string{"id"}).AddRow(int64(999)))
+	id1, err := st.RegisterNode(ctx, "host-a", 1234, "v1.0.0")
+	r.NoError(err)
+	id2, err := st.RegisterNode(ctx, "host-b", 5678, "v1.1.0")
+	r.NoError(err)
+	assert.NotEqual(t, id1, id2)
 
-	id, err := store.RegisterNode(ctx, "myhost", 42, "v1.0.0")
-	require.NoError(t, err)
-	assert.Equal(t, int64(999), id)
-	require.NoError(t, mock.ExpectationsWereMet())
+	nodes, err := st.GetNodes(ctx)
+	r.NoError(err)
+	r.Len(nodes, 2)
+
+	byHostname := make(map[string]store.NodeInfo, len(nodes))
+	for _, n := range nodes {
+		byHostname[n.Hostname] = n
+	}
+	r.Contains(byHostname, "host-a")
+	assert.Equal(t, id1, byHostname["host-a"].ID)
+	assert.Equal(t, 1234, byHostname["host-a"].PID)
+	assert.Equal(t, "v1.0.0", byHostname["host-a"].Version)
+	r.Contains(byHostname, "host-b")
+	assert.Equal(t, id2, byHostname["host-b"].ID)
+	assert.Equal(t, 5678, byHostname["host-b"].PID)
+	assert.Equal(t, "v1.1.0", byHostname["host-b"].Version)
 }
 
 func TestHeartbeat(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
 
-	mock.ExpectExec("UPDATE _visus.node").
-		WithArgs(int64(999)).
-		WillReturnResult(pgxmock.NewResult("UPDATE", 1))
+	id, err := st.RegisterNode(ctx, "myhost", 42, "v1.0.0")
+	r.NoError(err)
+	nodes, err := st.GetNodes(ctx)
+	r.NoError(err)
+	r.Len(nodes, 1)
+	before := nodes[0].Updated
 
-	err = store.Heartbeat(ctx, 999)
-	require.NoError(t, err)
-	require.NoError(t, mock.ExpectationsWereMet())
+	// The heartbeat timestamp has second-level precision, so give it a
+	// moment to move forward before comparing.
+	time.Sleep(1100 * time.Millisecond)
+	r.NoError(st.Heartbeat(ctx, id))
+
+	nodes, err = st.GetNodes(ctx)
+	r.NoError(err)
+	r.Len(nodes, 1)
+	assert.True(t, nodes[0].Updated.After(before), "heartbeat did not advance the updated timestamp")
 }
 
 func TestDeleteNode(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
 
-	mock.ExpectExec("DELETE FROM _visus.node WHERE").
-		WithArgs(int64(999)).
-		WillReturnResult(pgxmock.NewResult("DELETE", 1))
+	id, err := st.RegisterNode(ctx, "myhost", 42, "v1.0.0")
+	r.NoError(err)
 
-	err = store.DeleteNode(ctx, 999)
-	require.NoError(t, err)
-	require.NoError(t, mock.ExpectationsWereMet())
+	r.NoError(st.DeleteNode(ctx, id))
+
+	nodes, err := st.GetNodes(ctx)
+	r.NoError(err)
+	assert.Empty(t, nodes)
 }
 
-func TestDeleteNodeError(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+// TestNodeStoreErrors verifies that node store methods propagate a real
+// connection failure instead of swallowing it. The exact driver error text
+// isn't asserted since it comes from pgx/CockroachDB, not from this
+// package.
+func TestNodeStoreErrors(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
 
-	mock.ExpectExec("DELETE FROM _visus.node WHERE").
-		WithArgs(int64(999)).
-		WillReturnError(fmt.Errorf("connection lost"))
+	canceled, stop := context.WithCancel(ctx)
+	stop()
 
-	err = store.DeleteNode(ctx, 999)
-	assert.ErrorContains(t, err, "connection lost")
-	require.NoError(t, mock.ExpectationsWereMet())
-}
+	_, err := st.GetNodes(canceled)
+	assert.Error(t, err)
 
-func TestGetNodesQueryError(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
+	_, err = st.RegisterNode(canceled, "myhost", 42, "v1.0.0")
+	assert.Error(t, err)
 
-	mock.ExpectQuery("SELECT id, hostname, pid, version, updated").
-		WillReturnError(fmt.Errorf("connection refused"))
+	id, err := st.RegisterNode(ctx, "myhost", 42, "v1.0.0")
+	r.NoError(err)
 
-	_, err = store.GetNodes(ctx)
-	assert.ErrorContains(t, err, "connection refused")
-	require.NoError(t, mock.ExpectationsWereMet())
-}
+	err = st.Heartbeat(canceled, id)
+	assert.Error(t, err)
 
-func TestRegisterNodeError(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	mock.ExpectQuery("INSERT INTO _visus.node").
-		WithArgs("myhost", 42, "v1.0.0").
-		WillReturnError(fmt.Errorf("duplicate key"))
-
-	_, err = store.RegisterNode(ctx, "myhost", 42, "v1.0.0")
-	assert.ErrorContains(t, err, "duplicate key")
-	require.NoError(t, mock.ExpectationsWereMet())
-}
-
-func TestHeartbeatError(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	defer mock.Close(context.Background())
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	mock.ExpectExec("UPDATE _visus.node").
-		WithArgs(int64(999)).
-		WillReturnError(fmt.Errorf("timeout"))
-
-	err = store.Heartbeat(ctx, 999)
-	assert.ErrorContains(t, err, "timeout")
-	require.NoError(t, mock.ExpectationsWereMet())
+	err = st.DeleteNode(canceled, id)
+	assert.Error(t, err)
 }

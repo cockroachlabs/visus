@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build integration
+
 package collector
 
 import (
@@ -20,12 +22,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cockroachdb/cockroach-go/v2/testserver"
 	"github.com/cockroachdb/field-eng-powertools/lease"
 	"github.com/cockroachdb/field-eng-powertools/stopper"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/server"
 	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/cockroachlabs/visus/internal/testutil"
 	"github.com/go-co-op/gocron"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,27 +35,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testSetup starts a CockroachDB test server, initializes the schema,
-// and returns the pg URL.
+// testSetup resets the shared cluster's schema and returns its pg URL.
 func testSetup(t *testing.T) *url.URL {
 	t.Helper()
-	r := require.New(t)
-
-	ts, err := testserver.NewTestServer()
-	r.NoError(err)
-	t.Cleanup(ts.Stop)
-
-	pgURL := ts.PGURL()
-	r.NotNil(pgURL)
-
-	ctx := context.Background()
-	adminConn, err := database.New(ctx, pgURL.String())
-	r.NoError(err)
-
-	st := store.New(adminConn)
-	r.NoError(st.Init(ctx))
-
-	return pgURL
+	_, _ = testutil.NewStore(context.Background(), t)
+	return testutil.PGURL()
 }
 
 // newTestServer creates a collector server with its own connections,
