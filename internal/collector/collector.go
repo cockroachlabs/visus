@@ -141,7 +141,7 @@ func FromCollection(coll *store.Collection, registerer prometheus.Registerer) (C
 		case store.Counter:
 			err = res.AddCounter(m.Name, m.Help)
 		default:
-			log.Errorf("%s malformed", coll.Name)
+			err = errors.Errorf("%s: unsupported metric kind %q for metric %s", coll.Name, m.Kind, m.Name)
 		}
 		if err != nil {
 			return nil, err
