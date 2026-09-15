@@ -27,6 +27,12 @@ import (
 //go:embed testdata/invalid_scope.yaml
 var invalidScope string
 
+//go:embed testdata/invalid_kind.yaml
+var invalidKind string
+
+//go:embed testdata/duplicate_labels.yaml
+var duplicateLabels string
+
 //go:embed testdata/malformed.yaml
 var malformed string
 
@@ -96,6 +102,16 @@ func TestMarshalRoundTrip(t *testing.T) {
 			name:    "invalid scope",
 			yaml:    invalidScope,
 			wantErr: "invalid scope",
+		},
+		{
+			name:    "invalid kind",
+			yaml:    invalidKind,
+			wantErr: "invalid kind",
+		},
+		{
+			name:    "duplicate labels",
+			yaml:    duplicateLabels,
+			wantErr: "duplicate label",
 		},
 		{
 			name:    "unmarshal error",

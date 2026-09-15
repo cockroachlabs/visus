@@ -20,6 +20,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -268,6 +269,24 @@ func TestCollectSkipsConcurrent(t *testing.T) {
 	r.NoError(err)
 
 	c.mu.Unlock()
+}
+
+// TestFromCollectionUnsupportedKind verifies that FromCollection fails
+// instead of silently dropping a metric whose Kind isn't gauge or counter.
+func TestFromCollectionUnsupportedKind(t *testing.T) {
+	_, r := assertions(t)
+	coll := &store.Collection{
+		Name: "bad_kind",
+		Metrics: []store.Metric{
+			{
+				Name: "metric",
+				Kind: store.Kind("bogus"),
+				Help: "help",
+			},
+		},
+	}
+	_, err := FromCollection(coll, prometheus.NewRegistry())
+	r.Error(err)
 }
 
 func TestCounterLifeCycle(t *testing.T) {

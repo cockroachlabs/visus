@@ -80,11 +80,23 @@ func unmarshal(data []byte) (*store.Collection, error) {
 	}
 	metrics := make([]store.Metric, 0)
 	for _, m := range config.Metrics {
+		switch strings.ToLower(m.Kind) {
+		case string(store.Gauge), string(store.Counter):
+		default:
+			return nil, errors.New("invalid kind")
+		}
 		metrics = append(metrics, store.Metric{
 			Name: m.Name,
-			Kind: store.Kind(m.Kind),
+			Kind: store.Kind(strings.ToLower(m.Kind)),
 			Help: m.Help,
 		})
+	}
+	seenLabels := make(map[string]struct{}, len(config.Labels))
+	for _, l := range config.Labels {
+		if _, ok := seenLabels[l]; ok {
+			return nil, errors.Errorf("duplicate label %q", l)
+		}
+		seenLabels[l] = struct{}{}
 	}
 	var scope store.Scope
 	switch strings.ToLower(config.Scope) {
