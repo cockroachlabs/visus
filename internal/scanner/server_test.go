@@ -171,6 +171,45 @@ func TestRefreshScanners(t *testing.T) {
 
 }
 
+// TestRefreshScannersInvalidFormat verifies that a scan with an unsupported
+// Format is skipped rather than failing the whole refresh. This is the
+// server-layer safety net that complements the fail-fast Format validation
+// added at YAML-parse time in internal/cmd/scan/yaml.go: a Format value that
+// reaches the store through some other path (e.g. a stale row from a schema
+// version that supported it) should not block valid scans from starting.
+func TestRefreshScannersInvalidFormat(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	stopperCtx := stopper.WithContext(ctx)
+	mockStore := &store.Memory{}
+	mockStore.Init(ctx)
+	cfg := &server.Config{}
+	registry := prometheus.NewRegistry()
+	scanners := &scannerServer{
+		config:        cfg,
+		fromBeginning: true,
+		registry:      registry,
+		store:         mockStore,
+	}
+	scanners.mu.scanners = make(map[string]*Scanner)
+
+	badScan := &store.Scan{
+		Enabled: true,
+		Format:  store.LogFormat("bogus"),
+		Name:    "badformat",
+		Path:    "./testdata/sample.log",
+	}
+	mockStore.PutScan(ctx, badScan)
+
+	r.NoError(scanners.Refresh(stopperCtx))
+
+	_, ok := scanners.get(badScan.Name)
+	a.False(ok, "scan with an unsupported format should not have been registered")
+}
+
 func waitForMetrics(ctx context.Context, registry *prometheus.Registry, expected int) error {
 	for {
 		metrics, err := registry.Gather()

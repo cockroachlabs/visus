@@ -94,7 +94,7 @@ func TestCommands(t *testing.T) {
 	mscan1, err := marshal(scan1)
 	r.NoError(err)
 	scan1Cfg := string(mscan1)
-	scan2 := &store.Scan{Name: "scan_02"}
+	scan2 := &store.Scan{Name: "scan_02", Format: store.CRDBv2}
 	mscan2, err := marshal(scan2)
 	r.NoError(err)
 	scan2Cfg := string(mscan2)
