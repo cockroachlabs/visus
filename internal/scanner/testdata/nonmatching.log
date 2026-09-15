@@ -1,0 +1,6 @@
+I240418 15:31:56.563605 1 1@cli/start.go:1316 ⋮ [T1,n?] 8  using local environment variables:
+panic: something went wrong
+goroutine 1 [running]:
+main.main()
+	/app/main.go:42 +0x1a
+I240418 15:31:56.801319 97 server/config.go:860 ⋮ [T1,n?] 12  1 storage engine initialized
