@@ -15,6 +15,8 @@
 package scan
 
 import (
+	"strings"
+
 	"github.com/cockroachdb/errors"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/creasty/defaults"
@@ -81,9 +83,18 @@ func unmarshal(data []byte) (*store.Scan, error) {
 	if config.Name == "" {
 		return nil, errors.New("name must be specified")
 	}
+	var format store.LogFormat
+	switch strings.ToLower(config.Format) {
+	case string(store.CRDBv2):
+		format = store.CRDBv2
+	case string(store.CRDBv2Auth):
+		format = store.CRDBv2Auth
+	default:
+		return nil, errors.New("invalid format")
+	}
 	return &store.Scan{
 		Enabled:  config.Enabled,
-		Format:   store.LogFormat(config.Format),
+		Format:   format,
 		Path:     config.Path,
 		Name:     config.Name,
 		Patterns: patterns,
