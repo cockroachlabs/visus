@@ -26,11 +26,22 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestRefreshScanners(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
+	defer goleak.VerifyNone(t,
+		goleak.IgnoreCurrent(),
+		// nxadm/tail lazily starts a single, process-wide file-watcher
+		// goroutine pair the first time any file is tailed, and never
+		// stops them: they are reused by every Tail for the lifetime of
+		// the process. That is a property of the library, not a leak in
+		// Scanner's own Start/Stop.
+		goleak.IgnoreTopFunction("github.com/nxadm/tail/watch.(*InotifyTracker).run"),
+		goleak.IgnoreAnyFunction("github.com/fsnotify/fsnotify.(*Watcher).readEvents"),
+	)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -169,6 +180,11 @@ func TestRefreshScanners(t *testing.T) {
 		a.Contains([]string{"crdblog_cache", "crdblog_max", "pebble_sstable"}, *m.Name)
 	}
 
+	// Stop the remaining scanner and wait for its goroutines to exit before
+	// the goleak check above runs, so a leaked goroutine from Start/Stop
+	// does not go unnoticed.
+	cancel()
+	r.NoError(stopperCtx.Wait())
 }
 
 // TestRefreshScannersInvalidFormat verifies that a scan with an unsupported

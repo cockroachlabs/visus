@@ -22,6 +22,7 @@ require (
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.12.1
+	go.uber.org/goleak v1.3.0
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616
 	golang.org/x/tools v0.50.0
 	google.golang.org/protobuf v1.36.12

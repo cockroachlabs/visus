@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 // testSetup resets the shared cluster's schema and returns its pg URL.
@@ -118,6 +119,25 @@ func clusterCollection(name string) *store.Collection {
 func TestLeaseLifecycle(t *testing.T) {
 	r := require.New(t)
 	a := assert.New(t)
+	// The baseline must be captured now, before any servers start, but the
+	// check itself must run after newTestServer's t.Cleanup(scheduler.Stop)
+	// calls below: t.Cleanup callbacks run after this function's own defers,
+	// so a plain "defer goleak.VerifyNone" would fire first and flag each
+	// scheduler's still-running executor goroutine as a leak. Registering
+	// our own t.Cleanup here, before newTestServer registers its own, makes
+	// it run last (t.Cleanup is LIFO), after both schedulers have stopped.
+	ignoreBaseline := goleak.IgnoreCurrent()
+	t.Cleanup(func() {
+		goleak.VerifyNone(t,
+			ignoreBaseline,
+			// database.Pool has no Close method: its pools are designed to
+			// live for the process lifetime, so this test cannot release
+			// the admin/read-only connections it opens below either. That
+			// is a property of Pool, not of the collector's own lease and
+			// scheduling goroutines this test exists to verify.
+			goleak.IgnoreAnyFunction("github.com/jackc/pgx/v5/pgxpool.(*Pool).backgroundHealthCheck"),
+		)
+	})
 
 	pgURL := testSetup(t)
 
@@ -196,6 +216,14 @@ func TestLeaseLifecycle(t *testing.T) {
 	a.Eventually(func() bool {
 		return hasMetric(survivorReg, "handover_databases_count")
 	}, 10*time.Second, 500*time.Millisecond, "survivor never produced metrics after handover")
+
+	// Stop both servers and wait for their goroutines to exit before the
+	// goleak check above runs, so a leaked lease-holder goroutine from a
+	// handover does not go unnoticed.
+	cancel1()
+	cancel2()
+	r.NoError(stop1.Wait())
+	r.NoError(stop2.Wait())
 }
 
 func hasMetric(registry *prometheus.Registry, name string) bool {
