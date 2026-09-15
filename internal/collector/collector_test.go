@@ -20,9 +20,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/pashagolub/pgxmock/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -79,43 +76,6 @@ func assertions(t *testing.T) (*assert.Assertions, *require.Assertions) {
 	return assert.New(t), require.New(t)
 }
 
-func testCollect(t *testing.T, collector Collector, mock pgxmock.PgxConnIface, rows []sample) {
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	columns := []string{"label", "counter", "gauge"}
-	query := mock.ExpectQuery("SELECT label, counter, gauge from test limit .+").WithArgs(maxResults)
-	res := mock.NewRows(columns)
-	for _, row := range rows {
-		res.AddRow(row.label, row.counter, row.gauge)
-	}
-	query.WillReturnRows(res)
-	mock.ExpectCommit()
-	mock.ExpectRollback()
-	err := collector.Collect(context.Background(), mock)
-	require.NoError(t, err)
-}
-
-func testDatabaseCollect(
-	t *testing.T, collector Collector, mock pgxmock.PgxConnIface, rows []sample,
-) {
-	databases := mock.ExpectQuery("SELECT 'mydb'")
-	dbres := mock.NewRows([]string{"database"})
-	dbres.AddRow("mydb")
-	databases.WillReturnRows(dbres)
-	mock.ExpectBeginTx(pgx.TxOptions{})
-	mock.ExpectExec("USE .+").WithArgs("mydb").WillReturnResult(pgconn.NewCommandTag("SET"))
-	columns := []string{"label", "counter", "gauge"}
-	query := mock.ExpectQuery("SELECT label, counter, gauge from test limit .+").WithArgs(maxResults)
-	res := mock.NewRows(columns)
-	for _, row := range rows {
-		res.AddRow(row.label, row.counter, row.gauge)
-	}
-	query.WillReturnRows(res)
-	mock.ExpectCommit()
-	mock.ExpectRollback()
-	err := collector.Collect(context.Background(), mock)
-	require.NoError(t, err)
-}
-
 // newCollector creates a collector with the given name, for testing purposes.
 // The labels define the various attributes of the metrics being captured.
 // The query is the SQL query being executed to retrieve the metric values. The query must have an argument
@@ -138,234 +98,6 @@ func newCollector(name string, labels []string, databases string, query string) 
 		databases:  databases,
 		query:      query,
 		registerer: prometheus.DefaultRegisterer,
-	}
-}
-func TestCollect(t *testing.T) {
-	a, r := assertions(t)
-	mock, err := pgxmock.NewConn()
-	r.NoError(err)
-	counter := "counter"
-	gauge := "gauge"
-	prefix := "collect"
-	counterMetricName := strings.Join([]string{prefix, counter}, "_")
-	gaugeMetricName := strings.Join([]string{prefix, gauge}, "_")
-	coll := newCollector(prefix, []string{"label"}, "",
-		"SELECT label, counter, gauge from test limit $1").
-		WithMaxResults(maxResults)
-	err = coll.AddCounter(counter, counter)
-	r.NoError(err)
-	err = coll.AddGauge(gauge, gauge)
-	r.NoError(err)
-	collector := coll.(*collector)
-	collector.maybeInitCache()
-	r.Equal(4, collector.countersCache.MaxEntries)
-	r.Equal(0, collector.countersCache.Len())
-	tests := []test{
-		{
-			"start",
-			[]sample{
-				{"test1", 1, 1},
-				{"test2", 1, 5},
-			},
-			map[string][]string{
-				counterMetricName: {"label:test1 1.000000", "label:test2 1.000000"},
-				gaugeMetricName:   {"label:test1 1.000000", "label:test2 5.000000"},
-			},
-			2,
-		},
-		{
-			"counter_increase",
-			[]sample{
-				{"test1", 1, 3},
-				{"test2", 1, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"label:test1 1.000000", "label:test2 1.000000"},
-				gaugeMetricName:   {"label:test1 3.000000", "label:test2 1.000000"},
-			},
-			2,
-		},
-		{
-			"counter_increase_again",
-			[]sample{
-				{"test1", 4, 1},
-				{"test2", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"label:test1 4.000000", "label:test2 2.000000"},
-				gaugeMetricName:   {"label:test1 1.000000", "label:test2 1.000000"},
-			},
-			2,
-		},
-		{
-			"counter_reset",
-			[]sample{
-				{"test1", 2, 1},
-				{"test3", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"label:test1 6.000000", "label:test2 2.000000", "label:test3 2.000000"},
-				gaugeMetricName:   {"label:test1 1.000000", "label:test3 1.000000"},
-			},
-			3,
-		},
-		{
-			"new_labels",
-			[]sample{
-				{"test1", 2, 1},
-				{"test4", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"label:test1 6.000000", "label:test2 2.000000", "label:test3 2.000000", "label:test4 2.000000"},
-				gaugeMetricName:   {"label:test1 1.000000", "label:test4 1.000000"},
-			},
-			4,
-		},
-		{
-			"test2_evicted",
-			[]sample{
-				{"test1", 2, 1},
-				{"test5", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"label:test1 6.000000", "label:test3 2.000000", "label:test4 2.000000", "label:test5 2.000000"},
-				gaugeMetricName:   {"label:test1 1.000000", "label:test5 1.000000"},
-			},
-			4,
-		},
-	}
-	// run sequentially only
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testCollect(t, collector, mock, tt.samples)
-			testVerify(t, prefix, tt.expected)
-			expectedGaugeLabels := make([]string, len(tt.samples))
-			for i, s := range tt.samples {
-				expectedGaugeLabels[i] = s.label
-			}
-			var actualGaugeLabels []string
-			for k := range collector.gaugeLabels[gauge] {
-				actualGaugeLabels = append(actualGaugeLabels, k)
-			}
-			a.ElementsMatch(expectedGaugeLabels,
-				actualGaugeLabels)
-			a.Equal(tt.cacheLen, collector.countersCache.Len())
-		})
-	}
-}
-
-func TestDatabaseCollect(t *testing.T) {
-	a, r := assertions(t)
-	mock, err := pgxmock.NewConn()
-	r.NoError(err)
-	counter := "counter"
-	gauge := "gauge"
-	prefix := "dbcollect"
-	dbName := "mydb"
-	counterMetricName := strings.Join([]string{prefix, counter}, "_")
-	gaugeMetricName := strings.Join([]string{prefix, gauge}, "_")
-	coll := newCollector("testdb", []string{"label"},
-		fmt.Sprintf("SELECT '%s'", dbName),
-		"SELECT label, counter, gauge from test limit $1").
-		WithMaxResults(maxResults)
-	err = coll.AddCounter(counter, counter)
-	r.NoError(err)
-	err = coll.AddGauge(gauge, gauge)
-	r.NoError(err)
-	collector := coll.(*collector)
-	collector.maybeInitCache()
-	r.Equal(4, collector.countersCache.MaxEntries)
-	r.Equal(0, collector.countersCache.Len())
-	tests := []test{
-		{
-			"start",
-			[]sample{
-				{"test1", 1, 1},
-				{"test2", 1, 5},
-			},
-			map[string][]string{
-				counterMetricName: {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
-				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 5.000000"},
-			},
-			2,
-		},
-		{
-			"counter_increase",
-			[]sample{
-				{"test1", 1, 3},
-				{"test2", 1, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
-				gaugeMetricName:   {"_database:mydb,label:test1 3.000000", "_database:mydb,label:test2 1.000000"},
-			},
-			2,
-		},
-		{
-			"counter_increase_again",
-			[]sample{
-				{"test1", 4, 1},
-				{"test2", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"_database:mydb,label:test1 4.000000", "_database:mydb,label:test2 2.000000"},
-				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test2 1.000000"},
-			},
-			2,
-		},
-		{
-			"counter_reset",
-			[]sample{
-				{"test1", 2, 1},
-				{"test3", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test2 2.000000", "_database:mydb,label:test3 2.000000"},
-				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test3 1.000000"},
-			},
-			3,
-		},
-		{
-			"new_labels",
-			[]sample{
-				{"test1", 2, 1},
-				{"test4", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test2 2.000000", "_database:mydb,label:test3 2.000000", "_database:mydb,label:test4 2.000000"},
-				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test4 1.000000"},
-			},
-			4,
-		},
-		{
-			"test2_evicted",
-			[]sample{
-				{"test1", 2, 1},
-				{"test5", 2, 1},
-			},
-			map[string][]string{
-				counterMetricName: {"_database:mydb,label:test1 6.000000", "_database:mydb,label:test3 2.000000", "_database:mydb,label:test4 2.000000", "_database:mydb,label:test5 2.000000"},
-				gaugeMetricName:   {"_database:mydb,label:test1 1.000000", "_database:mydb,label:test5 1.000000"},
-			},
-			4,
-		},
-	}
-	// run sequentially only
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			testDatabaseCollect(t, collector, mock, tt.samples)
-			testVerify(t, prefix, tt.expected)
-			a.Equal(tt.cacheLen, collector.countersCache.Len())
-			expectedGaugeLabels := make([]string, len(tt.samples))
-			for i, s := range tt.samples {
-				expectedGaugeLabels[i] = fmt.Sprintf("%s|%s", s.label, dbName)
-			}
-			var actualGaugeLabels []string
-			for k := range collector.gaugeLabels[gauge] {
-				actualGaugeLabels = append(actualGaugeLabels, k)
-			}
-			a.ElementsMatch(expectedGaugeLabels, actualGaugeLabels)
-		})
 	}
 }
 
@@ -516,10 +248,12 @@ func TestGaugeLifeCycle(t *testing.T) {
 	r.Equal(0, len(families))
 
 }
+
+// TestCollectSkipsConcurrent verifies that Collect returns immediately,
+// without touching the connection, when a collection is already in
+// progress.
 func TestCollectSkipsConcurrent(t *testing.T) {
 	_, r := assertions(t)
-	mock, err := pgxmock.NewConn()
-	r.NoError(err)
 	coll := newCollector("concurrent", []string{"label"}, "",
 		"SELECT label, counter, gauge from test limit $1").
 		WithMaxResults(maxResults)
@@ -528,9 +262,9 @@ func TestCollectSkipsConcurrent(t *testing.T) {
 	// Hold the lock to simulate a concurrent collection in progress.
 	c.mu.Lock()
 
-	// Collect should return nil immediately without executing any query.
-	// No mock expectations are set, so any DB call would cause a failure.
-	err = c.Collect(context.Background(), mock)
+	// Collect should return nil immediately without touching the
+	// connection, so a nil connection is safe to pass here.
+	err := c.Collect(context.Background(), nil)
 	r.NoError(err)
 
 	c.mu.Unlock()

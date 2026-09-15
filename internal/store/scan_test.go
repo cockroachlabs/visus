@@ -12,173 +12,136 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package store
+//go:build integration
+
+package store_test
 
 import (
 	"context"
-	_ "embed"
 	"testing"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/pashagolub/pgxmock/v5"
+	"github.com/cockroachlabs/visus/internal/store"
+	"github.com/cockroachlabs/visus/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestGetScanNames verifies we can get the list of scans in the database.
-func TestGetScanNames(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-	columns := []string{"name"}
-	tests := [][]string{
-		{},
-		{"test1", "test2"},
-		{"test1", "test2", "test3"},
-	}
-	for _, tt := range tests {
-		query := mock.ExpectQuery(`select "name" from _visus.scan.+`)
-		res := mock.NewRows(columns)
-		for _, row := range tt {
-			res.AddRow(row)
-		}
-		query.WillReturnRows(res)
-		names, err := store.GetScanNames(ctx)
-		require.NoError(t, err)
-		assert.Equal(t, names, tt)
+// testScan returns a minimal, valid scan configuration for the given name.
+func testScan(name string) *store.Scan {
+	return &store.Scan{
+		Enabled:  true,
+		Format:   store.CRDBv2,
+		Path:     "/tmp/test.log",
+		Name:     name,
+		Patterns: []store.Pattern{},
 	}
 }
 
-// TestDeleteScan verifies we can get the delete a scan from the database.
-func TestDeleteScan(t *testing.T) {
-	mock, err := pgxmock.NewConn()
-	require.NoError(t, err)
-	store := New(mock)
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+// TestGetScanNames verifies that the list of scan names tracks the scans
+// that have been put into the store.
+func TestGetScanNames(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	mock.ExpectBegin()
-	mock.ExpectExec("delete from _visus.pattern where scan = .+").WithArgs("test").
-		WillReturnResult(pgxmock.NewResult("DELETE", 0))
-	mock.ExpectExec("delete from _visus.scan where name = .+").WithArgs("test").
-		WillReturnResult(pgxmock.NewResult("DELETE", 1))
-	mock.ExpectCommit()
-	err = store.DeleteScan(ctx, "test")
-	require.NoError(t, err)
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	names, err := st.GetScanNames(ctx)
+	r.NoError(err)
+	assert.Empty(t, names)
+
+	r.NoError(st.PutScan(ctx, testScan("test1")))
+	names, err = st.GetScanNames(ctx)
+	r.NoError(err)
+	assert.Equal(t, []string{"test1"}, names)
+
+	r.NoError(st.PutScan(ctx, testScan("test2")))
+	names, err = st.GetScanNames(ctx)
+	r.NoError(err)
+	assert.ElementsMatch(t, []string{"test1", "test2"}, names)
+}
+
+// TestDeleteScan verifies that deleting a scan removes it, and its
+// patterns, from the store.
+func TestDeleteScan(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	scan := testScan("test")
+	scan.Patterns = []store.Pattern{{Name: "cdc", Regex: "cdc", Help: "cdc events"}}
+	r.NoError(st.PutScan(ctx, scan))
+
+	r.NoError(st.DeleteScan(ctx, "test"))
+
+	got, err := st.GetScan(ctx, "test")
+	r.NoError(err)
+	assert.Nil(t, got)
+	patterns, err := st.GetScanPatterns(ctx, "test")
+	r.NoError(err)
+	assert.Empty(t, patterns)
 }
 
 // TestGetScan verifies we can get a scan definition from the database.
 func TestGetScan(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	type test struct {
-		name      string
-		scan      *Scan
-		wantError bool
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	got, err := st.GetScan(ctx, "none")
+	r.NoError(err)
+	assert.Nil(t, got)
+
+	noPatterns := testScan("no_patterns")
+	withPatterns := testScan("with_patterns")
+	withPatterns.Patterns = []store.Pattern{
+		{Name: "cdc", Regex: "cdc", Help: "cdc events"},
+		{Name: "kv", Regex: "kv", Exclude: "exclude", Help: "kv events"},
 	}
 
-	tests := []test{
-		{"none", nil, false},
-		{"no_patterns", &Scan{
-			Enabled:      true,
-			Format:       CRDBv2,
-			Path:         "/tmp/test.log",
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			Name:         "no_patterns",
-			Patterns:     []Pattern{},
-		}, false},
-		{"with_patterns", &Scan{
-			Enabled:      true,
-			Format:       CRDBv2,
-			Path:         "/tmp/test.log",
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			Patterns: []Pattern{
-				{"cdc", "cdc", "", "cdc events"},
-				{"kv", "kv", "exclude", "kv events"},
-			},
-			Name: "with_patterns",
-		}, false},
-	}
-	for _, tt := range tests {
-		mock, err := pgxmock.NewConn()
-		store := New(mock)
-		require.NoError(t, err)
-		collQuery := mock.ExpectQuery(`select name, path, format, updated, "enabled" from _visus.scan where name = .+`).
-			WithArgs(tt.name)
-		res := mock.NewRows([]string{"name", "path", "format", "updated", "enabled"})
-		if tt.scan != nil {
-			res.AddRow(
-				tt.name, tt.scan.Path, tt.scan.Format, tt.scan.LastModified, tt.scan.Enabled,
-			)
-		}
-		collQuery.WillReturnRows(res)
-		metricQuery := mock.ExpectQuery("select metric, regex, exclude, help from _visus.pattern where scan = .+").
-			WithArgs(tt.name)
-		res = mock.NewRows([]string{"metric", "regex", "exclude", "help"})
-		if tt.scan != nil {
-			for _, row := range tt.scan.Patterns {
-				res.AddRow(row.Name, row.Regex, row.Exclude, row.Help)
-			}
-		}
-		metricQuery.WillReturnRows(res)
-		coll, err := store.GetScan(ctx, tt.name)
-		require.NoError(t, err)
-		assert.Equal(t, tt.scan, coll)
-		mock.Close(ctx)
+	for _, want := range []*store.Scan{noPatterns, withPatterns} {
+		r.NoError(st.PutScan(ctx, want))
+
+		got, err := st.GetScan(ctx, want.Name)
+		r.NoError(err)
+		r.NotNil(got)
+		assert.WithinDuration(t, time.Now(), got.LastModified.Time, time.Minute)
+		got.LastModified = want.LastModified
+		assert.Equal(t, want, got)
 	}
 }
 
-// TestPutScan verifies we can upload a scan definition to the database.
+// TestPutScan verifies that a scan can be uploaded, and that putting it
+// again with different patterns replaces the previous ones.
 func TestPutScan(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	type test struct {
-		name      string
-		scan      *Scan
-		wantError bool
+	r := require.New(t)
+	st, _ := testutil.NewStore(ctx, t)
+
+	scan := testScan("with_patterns")
+	scan.Patterns = []store.Pattern{
+		{Name: "cdc", Regex: "cdc", Help: "cdc events"},
+		{Name: "kv", Regex: "kv", Exclude: "exclude", Help: "kv events"},
 	}
-	tests := []test{
-		{"no_patterns", &Scan{
-			Enabled:      true,
-			Format:       CRDBv2,
-			Path:         "/tmp/test.log",
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			Name:         "no_patterns",
-			Patterns:     []Pattern{},
-		}, false},
-		{"with_patterns", &Scan{
-			Enabled:      true,
-			Format:       CRDBv2,
-			Path:         "/tmp/test.log",
-			LastModified: pgtype.Timestamp{Time: time.Now()},
-			Patterns: []Pattern{
-				{"cdc", "cdc", "", "cdc events"},
-				{"kv", "kv", "exclude", "kv events"},
-			},
-			Name: "with_patterns",
-		}, false},
-	}
-	for _, tt := range tests {
-		mock, err := pgxmock.NewConn()
-		store := New(mock)
-		require.NoError(t, err)
-		mock.ExpectBegin()
-		mock.ExpectExec("delete from _visus.pattern where scan = .+").WithArgs(tt.scan.Name).
-			WillReturnResult(pgxmock.NewResult("DELETE", 0))
-		mock.ExpectExec(
-			`UPSERT INTO _visus.scan \(name, path, format, enabled, updated\) VALUES .+`).
-			WithArgs(tt.scan.Name, tt.scan.Path, tt.scan.Format, tt.scan.Enabled).
-			WillReturnResult(pgxmock.NewResult("UPDATE", 1))
-		for _, pattern := range tt.scan.Patterns {
-			mock.ExpectExec(`INSERT INTO _visus.pattern \(scan,metric,regex,exclude,help\) VALUES .+`).
-				WithArgs(tt.scan.Name, pattern.Name, pattern.Regex, pattern.Exclude, pattern.Help).
-				WillReturnResult(pgxmock.NewResult("INSERT", 1))
-		}
-		mock.ExpectCommit()
-		err = store.PutScan(ctx, tt.scan)
-		require.NoError(t, err)
-		mock.Close(ctx)
-	}
+	r.NoError(st.PutScan(ctx, scan))
+
+	got, err := st.GetScan(ctx, scan.Name)
+	r.NoError(err)
+	r.NotNil(got)
+	got.LastModified = scan.LastModified
+	assert.Equal(t, scan, got)
+
+	// Putting the scan again with fewer patterns must replace, not append
+	// to, the previous set.
+	scan.Patterns = []store.Pattern{{Name: "cdc", Regex: "cdc", Help: "cdc events"}}
+	r.NoError(st.PutScan(ctx, scan))
+
+	got, err = st.GetScan(ctx, scan.Name)
+	r.NoError(err)
+	r.NotNil(got)
+	got.LastModified = scan.LastModified
+	assert.Equal(t, scan, got)
 }

@@ -55,7 +55,11 @@ jobs:
 
       - name: Static checks
         if: ${{ !cancelled() }}
-        run: go run honnef.co/go/tools/cmd/staticcheck -checks all ./...
+        # Built with the integration tag so staticcheck can see the
+        # integration-only test files; otherwise it flags production code
+        # that's only exercised from those tests (e.g. server.go's
+        # isLeaseHolder/getJob) as unused.
+        run: go run honnef.co/go/tools/cmd/staticcheck -checks all -tags=integration ./...
 
       - name: Go Vet
         if: ${{ !cancelled() }}
@@ -76,3 +80,35 @@ jobs:
 
       - name: Go Tests
         run: go test -v -race -coverpkg=./internal/... -covermode=atomic -coverprofile=${{ env.COVER_OUT }} ./...
+
+  integration-tests:
+    name: Integration tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: latest
+            crdb-series: ""
+          - name: v25.4
+            crdb-series: "25.4"
+          - name: v24.3
+            crdb-series: "24.3"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up Go
+        uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6.3.0
+        with:
+          go-version-file: go.mod
+
+      - name: Go Tests
+        env:
+          CRDB_TEST_SERIES: ${{ matrix.crdb-series }}
+        # -p 1 runs one package's tests at a time. Each integration-tagged
+        # package starts its own CockroachDB testserver, and letting them
+        # run concurrently makes them race to download the same pinned
+        # binary; the losers spam "waiting for download of ..." every
+        # 10ms (cockroach-go/v2/testserver's binaries.go) until the
+        # winner finishes. Serializing avoids the race entirely.
+        run: go test -v -race -p 1 -tags=integration ./...
