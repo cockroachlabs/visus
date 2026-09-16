@@ -28,9 +28,23 @@ import (
 	"github.com/go-co-op/gocron"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// findGaugeValue returns the value of the gauge sample matching collectorName
+// within the given metric family, and whether it was found.
+func findGaugeValue(mf *dto.MetricFamily, collectorName string) (float64, bool) {
+	for _, m := range mf.GetMetric() {
+		for _, label := range m.GetLabel() {
+			if label.GetName() == "collector" && label.GetValue() == collectorName {
+				return m.GetGauge().GetValue(), true
+			}
+		}
+	}
+	return 0, false
+}
 
 var (
 	dbQuery    = "SELECT database, count FROM databases LIMIT $1"
@@ -169,4 +183,75 @@ func TestRefreshCollectors(t *testing.T) {
 	a.Equal(sqlJob.collector.GetLastModified(), sqlTime)
 	a.Equal(1, len(server.scheduler.Jobs()))
 
+}
+
+// TestCollectorLastSuccessMetric verifies that a successful collector run
+// records a recent timestamp in visus_collector_last_success_timestamp.
+func TestCollectorLastSuccessMetric(t *testing.T) {
+	r := require.New(t)
+	a := assert.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	conn, _ := testutil.NewDatabase(ctx, t)
+	_, err := conn.Exec(ctx, "CREATE TABLE databases (database STRING, count FLOAT8)")
+	r.NoError(err)
+	_, err = conn.Exec(ctx, "INSERT INTO databases VALUES ('test', 1)")
+	r.NoError(err)
+
+	stop := stopper.WithContext(ctx)
+	mockStore := &store.Memory{}
+	mockStore.Init(ctx)
+	registry := prometheus.NewRegistry()
+	srv, err := New(&server.Config{VisusMetrics: true}, mockStore, nil, conn, registry, gocron.NewScheduler(time.UTC))
+	r.NoError(err)
+	impl := srv.(*serverImpl)
+	impl.mu.stopped = true
+	impl.mu.scheduledJobs = make(map[string]*scheduledJob)
+	impl.scheduler.StartAsync()
+
+	before := float64(time.Now().Unix())
+	dbColl := &store.Collection{
+		Enabled: true,
+		Frequency: pgtype.Interval{
+			Microseconds: 1e6,
+			Valid:        true,
+		},
+		Labels: []string{"database"},
+		LastModified: pgtype.Timestamp{
+			Time:  time.Now(),
+			Valid: true,
+		},
+		MaxResult: 1,
+		Metrics: []store.Metric{
+			{
+				Name: "count",
+				Kind: store.Counter,
+				Help: "num of databases",
+			},
+		},
+		Name:  "databases",
+		Query: dbQuery,
+	}
+	err = mockStore.PutCollection(ctx, dbColl)
+	r.NoError(err)
+	err = srv.Refresh(stop)
+	r.NoError(err)
+
+	// Sleep just a few seconds, make sure the job has run at least once.
+	time.Sleep(2 * time.Second)
+	metrics, err := registry.Gather()
+	r.NoError(err)
+	var found bool
+	for _, mf := range metrics {
+		if mf.GetName() != "visus_collector_last_success_timestamp" {
+			continue
+		}
+		value, ok := findGaugeValue(mf, dbColl.Name)
+		r.True(ok, "expected a last-success sample for collector %q", dbColl.Name)
+		a.GreaterOrEqual(value, before)
+		found = true
+	}
+	a.True(found, "expected visus_collector_last_success_timestamp to be gathered")
 }

@@ -62,8 +62,15 @@ var (
 		},
 		labels,
 	)
+	collectorLastSuccess = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "visus_collector_last_success_timestamp",
+			Help: "unix timestamp of the last successful execution of a collector",
+		},
+		labels,
+	)
 	collectorMetrics = []prometheus.Collector{
-		collectorCounts, collectorErrors, collectorLatency,
+		collectorCounts, collectorErrors, collectorLatency, collectorLastSuccess,
 	}
 )
 
@@ -298,6 +305,8 @@ func (s *serverImpl) lockedRefresh(ctx *stopper.Context) error {
 						collectorErrors.WithLabelValues(name).Inc()
 					}
 					log.Errorf("collector %s: %s", collctr, err.Error())
+				} else if s.config.VisusMetrics {
+					collectorLastSuccess.WithLabelValues(name).SetToCurrentTime()
 				}
 				if s.config.VisusMetrics {
 					elapsed := time.Since(start).Milliseconds()
