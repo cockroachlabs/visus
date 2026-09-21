@@ -1,0 +1,88 @@
+# Copyright 2024 The Cockroach Authors
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# SPDX-License-Identifier: Apache-2.0
+
+# lag_seconds is -1 for a changefeed with no checkpoint yet
+# (high_water_timestamp is NULL) and for orphaned protected timestamp rows.
+#
+# target_tables/target_database come from full_table_names, always
+# fully-qualified as "database.schema.table"; target_database only reflects
+# the first table, so it's wrong for changefeeds spanning multiple
+# databases. database_name isn't used: it's always NULL today, reserved
+# for CREATE CHANGEFEED FOR DATABASE, which isn't implemented yet (CRDB
+# issue 154053). full_table_names also re-resolves descriptor IDs live, so
+# a since-dropped table/database can show up as NULL or as bracketed IDs
+# (e.g. "[123].[456].foo") instead of its original name.
+#
+name: changefeed_health
+enabled: false
+scope: cluster
+frequency: 30
+maxresults: 200
+labels: [job_id, status, sink_type, target_tables, target_database]
+metrics:
+  - name : lag_seconds
+    kind : gauge
+    help : seconds between the changefeed's high-water mark and now; -1 for an orphaned protected timestamp row, which has no high-water mark of its own.
+  - name : orphaned
+    kind : gauge
+    help : 1 if this row is a protected timestamp record whose owning job no longer appears in SHOW CHANGEFEED JOBS (a silent-disappearance signal), 0 for a live changefeed job.
+query:
+  WITH
+  jobs AS (
+    SELECT
+        job_id,
+        status,
+        high_water_timestamp,
+        regexp_extract(description, $$INTO '([a-zA-Z0-9+-]+):$$) AS sink_type,
+        array_to_string(full_table_names, ', ') AS target_tables,
+        split_part(full_table_names[1], '.', 1) AS target_database
+    FROM
+        [show changefeed jobs]
+  ),
+  jobs_labeled AS (
+    SELECT
+        job_id::STRING AS job_id,
+        status,
+        coalesce(sink_type, '') AS sink_type,
+        coalesce(target_tables, '') AS target_tables,
+        coalesce(target_database, '') AS target_database,
+        CASE WHEN high_water_timestamp IS NULL THEN -1
+             ELSE extract(epoch FROM now() - (high_water_timestamp / 1000000000)::INT::TIMESTAMPTZ)
+        END::FLOAT AS lag_seconds,
+        0::FLOAT AS orphaned
+    FROM
+        jobs
+  ),
+  orphaned_pts AS (
+    SELECT DISTINCT
+        decoded_meta->>'jobID' AS job_id,
+        'orphaned_protected_timestamp' AS status,
+        '' AS sink_type,
+        '' AS target_tables,
+        '' AS target_database,
+        (-1)::FLOAT AS lag_seconds,
+        1::FLOAT AS orphaned
+    FROM
+        crdb_internal.kv_protected_ts_records
+    WHERE
+        meta_type = 'jobs'
+        AND (decoded_meta->>'jobID')::INT NOT IN (SELECT job_id FROM [show changefeed jobs])
+  )
+  SELECT job_id, status, sink_type, target_tables, target_database, lag_seconds, orphaned FROM jobs_labeled
+  UNION ALL
+  SELECT job_id, status, sink_type, target_tables, target_database, lag_seconds, orphaned FROM orphaned_pts
+  LIMIT
+    $1;
