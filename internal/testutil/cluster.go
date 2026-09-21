@@ -36,6 +36,7 @@ import (
 	"testing"
 
 	"github.com/cockroachdb/cockroach-go/v2/testserver"
+	"github.com/cockroachdb/field-eng-powertools/semver"
 	"github.com/cockroachlabs/visus/internal/database"
 	"github.com/cockroachlabs/visus/internal/store"
 	"github.com/stretchr/testify/require"
@@ -47,6 +48,23 @@ import (
 // CI runs the same suite against multiple CRDB versions. When unset,
 // testserver downloads the latest stable release.
 const crdbTestSeriesEnv = "CRDB_TEST_SERIES"
+
+// allowUnsafeInternalsMinVersion is the earliest CockroachDB release series
+// that supports the allow_unsafe_internals session variable.
+var allowUnsafeInternalsMinVersion = semver.MustSemver("v25.1.0")
+
+// SupportsAllowUnsafeInternals reports whether the cluster series pinned by
+// CRDB_TEST_SERIES supports the allow_unsafe_internals session variable. It
+// checks the env var rather than querying the live cluster, since that's the
+// version StartCluster actually requests; when unset, StartCluster downloads
+// the latest stable release, which always qualifies.
+func SupportsAllowUnsafeInternals() bool {
+	series := os.Getenv(crdbTestSeriesEnv)
+	if series == "" {
+		return true
+	}
+	return semver.MustSemver("v" + series + ".0").MinVersion(allowUnsafeInternalsMinVersion)
+}
 
 // crdbReleaseDataURL is the CockroachDB release catalog. StartCluster uses
 // it to resolve "latest patch in a given series" into a concrete version to
