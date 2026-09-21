@@ -8,7 +8,7 @@ require (
 	github.com/cockroachdb/crlfmt v0.5.2
 	github.com/cockroachdb/errors v1.14.0
 	github.com/cockroachdb/field-eng-powertools v0.2.1
-	github.com/creasty/defaults v1.8.0
+	github.com/creasty/defaults v1.11.0
 	github.com/go-co-op/gocron v1.37.0
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da
 	github.com/google/addlicense v1.2.0
