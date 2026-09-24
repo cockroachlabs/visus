@@ -48,10 +48,10 @@ import (
 // testserver downloads the latest stable release.
 const crdbTestSeriesEnv = "CRDB_TEST_SERIES"
 
-// crdbReleaseDataURL is the release feed cockroach-go/v2/testserver itself
-// uses to resolve "latest stable"; reusing it here lets StartCluster
-// resolve "latest patch in a given series" the same way.
-const crdbReleaseDataURL = "https://raw.githubusercontent.com/cockroachdb/docs/main/src/current/_data/releases.yml"
+// crdbReleaseDataURL is the CockroachDB release catalog. StartCluster uses
+// it to resolve "latest patch in a given series" into a concrete version to
+// hand to testserver.CustomVersionOpt.
+const crdbReleaseDataURL = "https://binaries.cockroachdb.com/releases/v1/releases.yaml"
 
 // pgURL holds the connection URL for the shared cluster started by
 // StartCluster. It is read by PGURL once the cluster is up.
@@ -89,12 +89,18 @@ func StartCluster(m *testing.M) int {
 	return m.Run()
 }
 
+// crdbReleaseData is the subset of the release catalog's top-level schema
+// (https://binaries.cockroachdb.com/releases/v1/releases.yaml) we need.
+type crdbReleaseData struct {
+	SchemaVersion int           `yaml:"schema_version"`
+	Releases      []crdbRelease `yaml:"releases"`
+}
+
 // crdbRelease is the subset of fields we need from crdbReleaseDataURL's
 // YAML feed.
 type crdbRelease struct {
-	Name      string `yaml:"release_name"`
+	Version   string `yaml:"version"`
 	Withdrawn bool   `yaml:"withdrawn"`
-	CloudOnly bool   `yaml:"cloud_only"`
 }
 
 // latestPatchInSeries returns the newest non-withdrawn, downloadable
@@ -107,28 +113,35 @@ func latestPatchInSeries(series string) (string, error) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("downloading release data: unexpected status %s", resp.Status)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("reading release data: %w", err)
 	}
 
-	var releases []crdbRelease
-	if err := yaml.Unmarshal(body, &releases); err != nil {
+	var data crdbReleaseData
+	if err := yaml.Unmarshal(body, &data); err != nil {
 		return "", fmt.Errorf("parsing release data: %w", err)
+	}
+	if data.SchemaVersion != 1 {
+		return "", fmt.Errorf("unexpected release catalog schema_version %d", data.SchemaVersion)
 	}
 
 	pattern := regexp.MustCompile(`^v` + regexp.QuoteMeta(series) + `\.(\d+)$`)
 	best, bestPatch := "", -1
-	for _, r := range releases {
-		if r.Withdrawn || r.CloudOnly {
+	for _, r := range data.Releases {
+		if r.Withdrawn {
 			continue
 		}
-		m := pattern.FindStringSubmatch(r.Name)
+		m := pattern.FindStringSubmatch(r.Version)
 		if m == nil {
 			continue
 		}
 		if patch, err := strconv.Atoi(m[1]); err == nil && patch > bestPatch {
-			bestPatch, best = patch, r.Name
+			bestPatch, best = patch, r.Version
 		}
 	}
 	if best == "" {
