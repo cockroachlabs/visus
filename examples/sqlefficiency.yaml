@@ -14,7 +14,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-
+# The "explicitlio" type (logical I/O from statements run in an explicit
+# transaction) was dropped: CockroachDB v26.3 removed
+# crdb_internal.node_statement_statistics.implicit_txn, and no replacement
+# is exposed (see cockroachdb/cockroach#141862).
 name: sqlefficiency
 enabled: true
 scope: node
@@ -31,7 +34,6 @@ query:
       AS (
         SELECT
           statement_id,
-          IF(implicit_txn = 'false', 1, 0) AS explicittxn,
           IF(full_scan, 1, 0) AS fullscan,
           IF(sample_plan::STRING LIKE '%index join%', 1, 0) AS ijoinstmt,
           rows_avg::INT8 AS numrows,
@@ -49,13 +51,11 @@ query:
           statement_id,
           sum(fullscan * execcnt) AS fullcnt,
           sum(ijoinstmt * execcnt) AS ijoincnt,
-          sum(explicittxn * execcnt) AS explicitcnt,
           sum(
             (
               IF(
                 fullscan = 0
-                AND ijoinstmt = 0
-                AND explicittxn = 0,
+                AND ijoinstmt = 0,
                 1,
                 0
               )
@@ -75,8 +75,6 @@ query:
   SELECT 'fulllio' as type,sum(lioperstmt * (IF(fullcnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
   UNION
   SELECT 'ijoinlio' as type,sum(lioperstmt * (IF(ijoincnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
-  UNION
-  SELECT 'explicitlio' as type,sum(lioperstmt * (IF(explicitcnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
   UNION
   SELECT 'healtylio' as type,sum(lioperstmt * (IF(healthycnt > 0, 1, 0))) AS rows FROM sql_distinct_cnt
   LIMIT 

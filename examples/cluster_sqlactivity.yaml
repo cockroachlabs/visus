@@ -65,7 +65,7 @@ query:
     SELECT
       encode(fingerprint_id, 'hex') as statement,
       app_name as application,
-      metadata->'db' as database,
+      metadata->'db' as db_name,
       sum((statistics->'execution_statistics'->'cnt')::float8) AS exec_count,
       max((statistics->'execution_statistics'->'maxDiskUsage'->'mean')::float8) AS max_disk,
       sum((statistics->'execution_statistics'->'networkBytes'->'mean')::float8  * (statistics->'execution_statistics'->'cnt')::float8 )  AS net_bytes,
@@ -84,10 +84,10 @@ query:
       AND aggregated_ts = (select * from max)
       AND aggregation_interval = '1h'  
     GROUP BY
-      statement, application, database  
+      statement, application, db_name
   )
-  select 
-    statement, application, database,
+  select
+    statement, application, db_name as database,
     exec_count,
     net_bytes / exec_count as net_bytes,
     max_disk,

@@ -14,6 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# crdb_internal.ranges_no_leases has no table_id column (removed after
+# v25.2), so the table id is parsed out of start_pretty instead, matching
+# table_mvcc.yaml. Verified against a local v26.2 cluster.
 name: intent
 enabled: true
 scope: cluster
@@ -24,16 +27,23 @@ metrics:
   - name : count
     kind : counter
     help : number of intents.
-query: 
+query:
   SELECT table_name, intent_count as count
   FROM (
-          SELECT name as table_name,
+          SELECT t.name as table_name,
                  sum(
-                    (crdb_internal.range_stats(start_key)->'intent_count')::INT8
+                    (crdb_internal.range_stats(r.start_key)->'intent_count')::INT8
                  ) AS intent_count
             FROM crdb_internal.ranges_no_leases AS r
-            JOIN crdb_internal.tables AS t ON r.table_id = t.table_id
-        GROUP BY name
+            JOIN crdb_internal.tables AS t ON (
+                CASE
+                    WHEN strpos(substring(r.start_pretty, 8), '/') > 0
+                    THEN substring(r.start_pretty, 8, strpos(substring(r.start_pretty, 8), '/') - 1)
+                    ELSE substring(r.start_pretty, 8)
+                    END
+                )::INT8 = t.table_id
+           WHERE r.start_pretty::STRING LIKE '/Table/%'
+        GROUP BY t.name
        ) AS inline
  WHERE intent_count > 0
  LIMIT $1;
