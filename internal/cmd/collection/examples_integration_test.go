@@ -18,8 +18,10 @@ package collection
 
 import (
 	"context"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -41,9 +43,15 @@ import (
 type exampleCase struct {
 	// file is the YAML file name under examples/.
 	file string
+	// setupPermission grants the privileges the query needs on top of the
+	// ones "visus init" provisions, and must match the privileges documented
+	// at the top of the YAML file. user is the per-test visus role; admin is
+	// connected to the scratch database. Nil when the baseline is enough.
+	setupPermission func(ctx context.Context, t *testing.T, admin database.Connection, user string)
 	// setup prepares the database state the query needs. admin is a
-	// read-write connection to a fresh scratch database; ro allows
-	// crdb_internal/system access (see unsafeInternalsPool).
+	// read-write connection to a fresh scratch database; ro is the same
+	// database as the visus role, with crdb_internal access (see
+	// unsafeInternalsPool).
 	setup func(ctx context.Context, t *testing.T, admin, ro database.Connection)
 	// requireData requires at least one non-NULL metric sample. When false,
 	// the query only needs to run without a SQL or column-count error.
@@ -55,27 +63,35 @@ type exampleCase struct {
 // dashboard.json (a Grafana export) are omitted since they'd fail unmarshal.
 var exampleCases = []exampleCase{
 	{file: "blocking_statements.yaml", setup: setupContention, requireData: true},
-	{file: "contended_tables.yaml", setup: setupContention, requireData: true},
-	{file: "changefeed_health.yaml", setup: setupChangefeed, requireData: true},
+	{file: "contended_tables.yaml", setupPermission: grantSelectOnTables, setup: setupContention,
+		requireData: true},
+	{file: "changefeed_health.yaml", setupPermission: grantViewJob, setup: setupChangefeed, requireData: true},
 	// system.protected_ts_records is normally populated by a paused job;
 	// not verified live yet, so just check the query runs.
-	{file: "protected_ts.yaml", setup: setupPlainTable, requireData: false},
+	{file: "protected_ts.yaml", setupPermission: grantViewSystemTable, setup: setupPlainTable,
+		requireData: false},
 	// On CockroachDB v26.3+, write buffering can keep an open write from
 	// showing up as a replicated intent, so only check the query runs.
-	{file: "intents.yaml", setup: setupPlainTable, requireData: false},
+	{file: "intents.yaml", setupPermission: grantSelectOnTables, setup: setupPlainTable,
+		requireData: false},
 	{file: "inflight.yaml", setup: setupInflightQuery, requireData: true},
-	{file: "index_usage.yaml", setup: setupPlainTable, requireData: true},
-	{file: "tables.yaml", setup: setupPlainTable, requireData: true},
+	{file: "index_usage.yaml", setupPermission: grantSelectOnTables, setup: setupPlainTable,
+		requireData: true},
+	{file: "tables.yaml", setupPermission: grantSelectOnTables, setup: setupPlainTable,
+		requireData: true},
 	// estimated_row_count is populated by an async stats job that stayed
 	// NULL for 6+ seconds in testing, so only check the query runs.
 	{file: "tables_rows.yaml", setup: setupPlainTable, requireData: false},
 	// garbage_percent > 0 AND total_bytes > 1MiB needs several MiB of real
 	// MVCC garbage; too expensive for now, so only check the query runs.
-	{file: "table_mvcc.yaml", setup: setupPlainTable, requireData: false},
-	{file: "table_mvcc_node.yaml", setup: setupPlainTable, requireData: false},
+	{file: "table_mvcc.yaml", setupPermission: grantViewSystemTable, setup: setupPlainTable,
+		requireData: false},
+	{file: "table_mvcc_node.yaml", setupPermission: grantViewSystemTable, setup: setupPlainTable,
+		requireData: false},
 	{file: "sqlactivity.yaml", setup: setupNodeStatementStats, requireData: true},
 	{file: "sqlefficiency.yaml", setup: setupNodeStatementStats, requireData: true},
-	{file: "cluster_sqlactivity.yaml", setup: setupPersistedStatementStats, requireData: true},
+	{file: "cluster_sqlactivity.yaml", setupPermission: grantViewSystemTable,
+		setup: setupPersistedStatementStats, requireData: true},
 }
 
 // statsFlushOnce lowers sql.stats.flush.interval once per run, since
@@ -109,8 +125,13 @@ func runExampleCase(t *testing.T, tc exampleCase) {
 	coll, err := unmarshal(data)
 	r.NoError(err)
 
+	user := newVisusRole(ctx, t)
 	admin, dbName := testutil.NewDatabase(ctx, t)
-	ro, err := unsafeInternalsPool(ctx, sameDBURL(dbName), testutil.SupportsAllowUnsafeInternals())
+	if tc.setupPermission != nil {
+		tc.setupPermission(ctx, t, admin, user)
+	}
+
+	ro, err := unsafeInternalsPool(ctx, userDBURL(user, dbName), testutil.SupportsAllowUnsafeInternals())
 	r.NoError(err)
 	defer ro.Close()
 
@@ -139,12 +160,77 @@ func examplesDir(t *testing.T) string {
 	return filepath.Join(filepath.Dir(file), "..", "..", "..", "examples")
 }
 
-// sameDBURL returns the shared cluster's connection URL pointed at dbName,
-// mirroring how testutil.NewDatabase builds its own connection.
-func sameDBURL(dbName string) string {
+// userDBURL returns the shared cluster's connection URL for the given SQL
+// user, pointed at dbName. The test cluster is insecure, so no password is
+// needed.
+func userDBURL(user, dbName string) string {
 	u := testutil.PGURL()
+	u.User = url.User(user)
 	u.Path = "/" + dbName
 	return u.String()
+}
+
+// invalidRoleChars matches everything that isn't safe to use unquoted in a
+// CockroachDB role identifier.
+var invalidRoleChars = regexp.MustCompile(`[^a-z0-9_]+`)
+
+// newVisusRole creates a role holding exactly the privileges "visus init"
+// provisions (internal/store/sql/ddl.sql), so that a collection needing more
+// fails here the same way it would against a real deployment. Anything extra
+// has to come from the case's setupPermission.
+//
+// Call it before creating the scratch database: a role can't be dropped while
+// it still holds privileges, and t.Cleanup runs last-registered first.
+func newVisusRole(ctx context.Context, t *testing.T) string {
+	t.Helper()
+	r := require.New(t)
+
+	name := "visus_" + invalidRoleChars.ReplaceAllString(strings.ToLower(t.Name()), "_")
+	admin, err := database.New(ctx, testutil.PGURL().String())
+	r.NoError(err)
+	_, err = admin.Exec(ctx, "CREATE USER IF NOT EXISTS "+name)
+	r.NoError(err)
+	_, err = admin.Exec(ctx, "ALTER ROLE "+name+" WITH VIEWACTIVITY")
+	r.NoError(err)
+	t.Cleanup(func() {
+		// System privileges outlive the scratch database and block DROP ROLE.
+		if _, err := admin.Exec(context.Background(), "REVOKE SYSTEM ALL FROM "+name); err != nil {
+			t.Logf("revoking system privileges from role %s: %v", name, err)
+		}
+		if _, err := admin.Exec(context.Background(), "DROP ROLE IF EXISTS "+name); err != nil {
+			t.Logf("dropping role %s: %v", name, err)
+		}
+	})
+	return name
+}
+
+// grantViewJob lets the visus role see jobs it doesn't own, which
+// [SHOW CHANGEFEED JOBS] otherwise hides.
+func grantViewJob(ctx context.Context, t *testing.T, admin database.Connection, user string) {
+	t.Helper()
+	_, err := admin.Exec(ctx, "GRANT SYSTEM VIEWJOB TO "+user)
+	require.NoError(t, err)
+}
+
+// grantSelectOnTables lets the visus role read the tables the case creates.
+// CockroachDB v24.3 hides rows in crdb_internal.tables and
+// cluster_contended_tables for tables the role can't read. Default privileges
+// are used because setupPermission runs before the tables exist.
+func grantSelectOnTables(
+	ctx context.Context, t *testing.T, admin database.Connection, user string,
+) {
+	t.Helper()
+	_, err := admin.Exec(ctx, "ALTER DEFAULT PRIVILEGES GRANT SELECT ON TABLES TO "+user)
+	require.NoError(t, err)
+}
+
+// grantViewSystemTable lets the visus role read the system tables.
+func grantViewSystemTable(
+	ctx context.Context, t *testing.T, admin database.Connection, user string,
+) {
+	t.Helper()
+	_, err := admin.Exec(ctx, "GRANT SYSTEM VIEWSYSTEMTABLE TO "+user)
+	require.NoError(t, err)
 }
 
 // unsafeInternalsPool opens a pool like database.ReadOnly, but skips its
@@ -154,7 +240,7 @@ func sameDBURL(dbName string) string {
 // actually running.
 //
 // If allowUnsafeInternals is true, it also sets allow_unsafe_internals on
-// the connection, needed on CockroachDB v25.1+ to query crdb_internal (see
+// the connection, needed on CockroachDB v25.4+ to query crdb_internal (see
 // testutil.SupportsAllowUnsafeInternals). Older series never gated
 // crdb_internal access behind the setting, so there's nothing to enable.
 func unsafeInternalsPool(
@@ -334,9 +420,13 @@ func setupNodeStatementStats(ctx context.Context, t *testing.T, admin, ro databa
 
 // setupPersistedStatementStats waits for a query to reach the persisted
 // system.statement_statistics table, which cluster_sqlactivity.yaml needs
-// for its max(aggregated_ts) subquery. Polling crdb_internal.statement_statistics
-// instead would race ahead of the actual flush, since it can reflect
-// not-yet-flushed in-memory stats.
+// for its max(aggregated_ts) subquery.
+//
+// The wait is for a non-internal fingerprint in the newest aggregation
+// bucket, which is what the collection selects on. Waiting for the table's
+// row count to grow instead lets a flush batch of internal statements
+// satisfy the poll while the test's own statement is still pending, leaving
+// the collection with nothing to report.
 func setupPersistedStatementStats(
 	ctx context.Context, t *testing.T, admin, ro database.Connection,
 ) {
@@ -352,18 +442,16 @@ func setupPersistedStatementStats(
 	r.NoError(err)
 	_, err = admin.Exec(ctx, "INSERT INTO p VALUES (1, 'a')")
 	r.NoError(err)
-
-	var before int
-	r.NoError(ro.QueryRow(ctx,
-		"SELECT count(*) FROM system.statement_statistics").Scan(&before))
-
 	_, err = admin.Exec(ctx, "SELECT v FROM p WHERE id = 1")
 	r.NoError(err)
 
-	r.True(pollUntil(15*time.Second, 500*time.Millisecond, func() bool {
-		var after int
+	r.True(pollUntil(20*time.Second, 500*time.Millisecond, func() bool {
+		var n int
 		err := ro.QueryRow(ctx,
-			"SELECT count(*) FROM system.statement_statistics").Scan(&after)
-		return err == nil && after > before
-	}), "expected new persisted statement statistics")
+			"SELECT count(*) FROM system.statement_statistics "+
+				"WHERE app_name NOT LIKE '$ internal-%' "+
+				"AND aggregated_ts = (SELECT max(aggregated_ts) FROM system.statement_statistics)").
+			Scan(&n)
+		return err == nil && n > 0
+	}), "expected a non-internal fingerprint in the newest persisted aggregation bucket")
 }

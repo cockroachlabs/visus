@@ -14,6 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: beyond what "visus init" grants, reading system.protected_ts_records needs
+#   GRANT SYSTEM VIEWSYSTEMTABLE TO visus;
+
 
 name: protected_ts
 enabled: false

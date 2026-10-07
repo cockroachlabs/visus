@@ -14,8 +14,14 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# lag_seconds is -1 for a changefeed with no checkpoint yet
-# (high_water_timestamp is NULL) and for orphaned protected timestamp rows.
+# Privileges: beyond what "visus init" grants, [SHOW CHANGEFEED JOBS] needs
+#   GRANT SYSTEM VIEWJOB TO visus;
+# otherwise it only returns jobs the visus user owns.
+#
+# lag_seconds is -1 for a changefeed that has no checkpoint yet
+# (high_water_timestamp is NULL). Canceled and failed changefeeds stay in
+# [SHOW CHANGEFEED JOBS] for 12h with a lag_seconds that keeps growing, so
+# alerts should filter on status="running".
 #
 # target_tables/target_database come from full_table_names, always
 # fully-qualified as "database.schema.table"; target_database only reflects
@@ -35,54 +41,18 @@ labels: [job_id, status, sink_type, target_tables, target_database]
 metrics:
   - name : lag_seconds
     kind : gauge
-    help : seconds between the changefeed's high-water mark and now; -1 for an orphaned protected timestamp row, which has no high-water mark of its own.
-  - name : orphaned
-    kind : gauge
-    help : 1 if this row is a protected timestamp record whose owning job no longer appears in SHOW CHANGEFEED JOBS (a silent-disappearance signal), 0 for a live changefeed job.
+    help : seconds between the changefeed's high-water mark and now; -1 before the first checkpoint.
 query:
-  WITH
-  jobs AS (
-    SELECT
-        job_id,
-        status,
-        high_water_timestamp,
-        regexp_extract(description, $$INTO '([a-zA-Z0-9+-]+):$$) AS sink_type,
-        array_to_string(full_table_names, ', ') AS target_tables,
-        split_part(full_table_names[1], '.', 1) AS target_database
-    FROM
-        [show changefeed jobs]
-  ),
-  jobs_labeled AS (
-    SELECT
-        job_id::STRING AS job_id,
-        status,
-        coalesce(sink_type, '') AS sink_type,
-        coalesce(target_tables, '') AS target_tables,
-        coalesce(target_database, '') AS target_database,
-        CASE WHEN high_water_timestamp IS NULL THEN -1
-             ELSE extract(epoch FROM now() - (high_water_timestamp / 1000000000)::INT::TIMESTAMPTZ)
-        END::FLOAT AS lag_seconds,
-        0::FLOAT AS orphaned
-    FROM
-        jobs
-  ),
-  orphaned_pts AS (
-    SELECT DISTINCT
-        decoded_meta->>'jobID' AS job_id,
-        'orphaned_protected_timestamp' AS status,
-        '' AS sink_type,
-        '' AS target_tables,
-        '' AS target_database,
-        (-1)::FLOAT AS lag_seconds,
-        1::FLOAT AS orphaned
-    FROM
-        crdb_internal.kv_protected_ts_records
-    WHERE
-        meta_type = 'jobs'
-        AND (decoded_meta->>'jobID')::INT NOT IN (SELECT job_id FROM [show changefeed jobs])
-  )
-  SELECT job_id, status, sink_type, target_tables, target_database, lag_seconds, orphaned FROM jobs_labeled
-  UNION ALL
-  SELECT job_id, status, sink_type, target_tables, target_database, lag_seconds, orphaned FROM orphaned_pts
+  SELECT
+      job_id::STRING AS job_id,
+      status,
+      coalesce(regexp_extract(description, $$INTO '([a-zA-Z0-9+-]+):$$), '') AS sink_type,
+      coalesce(array_to_string(full_table_names, ', '), '') AS target_tables,
+      coalesce(split_part(full_table_names[1], '.', 1), '') AS target_database,
+      CASE WHEN high_water_timestamp IS NULL THEN -1
+           ELSE extract(epoch FROM now() - hlc_to_timestamp(high_water_timestamp))
+      END::FLOAT AS lag_seconds
+  FROM
+      [SHOW CHANGEFEED JOBS]
   LIMIT
     $1;

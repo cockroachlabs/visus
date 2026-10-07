@@ -47,6 +47,7 @@ The sidecar needs `SELECT ON TABLES` privileges on the `_visus` database to read
 To run many of the sample collections available in the examples directory,
 the 'VIEWACTIVITY' option should be granted to the user.
 The `./visus init` command will provision a `visus` user with the minimal privileges to run the sidecar. Defining new collection may require additional privileges, depending on what data the SQL query associated to the collection has to access.
+Each file in the examples directory states, in a comment at the top, the privileges its query needs beyond the ones `visus init` grants.
 
 ## Example
 

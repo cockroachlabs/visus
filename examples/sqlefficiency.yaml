@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: none beyond what "visus init" grants (VIEWACTIVITY).
+
 # The "explicitlio" type (logical I/O from statements run in an explicit
 # transaction) was dropped: CockroachDB v26.3 removed
 # crdb_internal.node_statement_statistics.implicit_txn, and no replacement

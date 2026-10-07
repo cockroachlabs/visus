@@ -14,6 +14,8 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: none beyond what "visus init" grants (VIEWACTIVITY).
+
 name: blocking_statements
 enabled: true
 scope: cluster

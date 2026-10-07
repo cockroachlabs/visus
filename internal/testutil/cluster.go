@@ -51,7 +51,7 @@ const crdbTestSeriesEnv = "CRDB_TEST_SERIES"
 
 // allowUnsafeInternalsMinVersion is the earliest CockroachDB release series
 // that supports the allow_unsafe_internals session variable.
-var allowUnsafeInternalsMinVersion = semver.MustSemver("v25.1.0")
+var allowUnsafeInternalsMinVersion = semver.MustSemver("v25.4.0")
 
 // SupportsAllowUnsafeInternals reports whether the cluster series pinned by
 // CRDB_TEST_SERIES supports the allow_unsafe_internals session variable. It
