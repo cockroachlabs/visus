@@ -14,6 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: beyond what "visus init" grants, reading system.namespace needs
+#   GRANT SYSTEM VIEWSYSTEMTABLE TO visus;
+
 # This could be long running and expensive query. 
 # It is a cluster wide query that will be executed only
 # by one visus process.

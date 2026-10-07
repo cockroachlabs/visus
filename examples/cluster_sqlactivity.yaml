@@ -14,6 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: beyond what "visus init" grants, reading system.statement_statistics needs
+#   GRANT SYSTEM VIEWSYSTEMTABLE TO visus;
+
 # Note: This query is meant to be executed at a cluster level, 
 # and very low frequency. 
 # If visus is deployed in a self hosted cluster as a sidecar for each node, 

@@ -14,9 +14,12 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-# crdb_internal.ranges_no_leases has no table_id column (removed after
-# v25.2), so the table id is parsed out of start_pretty instead, matching
-# table_mvcc.yaml. Verified against a local v26.2 cluster.
+# Privileges: beyond what "visus init" grants, the visus user needs SELECT on
+# the tables it reports on. CockroachDB v24.3 hides rows in crdb_internal for
+# tables the user cannot read; later versions do not filter.
+
+# crdb_internal.ranges_no_leases lost its table_id column in v23.1, so the
+# table id is parsed out of start_pretty instead, matching table_mvcc.yaml.
 name: intent
 enabled: true
 scope: cluster
