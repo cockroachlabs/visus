@@ -67,7 +67,10 @@ cluster-scope coordination.
 
 If a collection's query reads tables beyond `crdb_internal` /
 `_visus`, the `visus` role needs SELECT on those tables as well. Grant
-them separately.
+them separately. A query reading `system` tables needs
+`GRANT SYSTEM VIEWSYSTEMTABLE` instead.
+Each file in `examples/` names the privileges its query needs on top of
+what `visus init` grants.
 
 ## Defining collections
 

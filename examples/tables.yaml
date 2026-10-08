@@ -14,6 +14,10 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: beyond what "visus init" grants, the visus user needs SELECT on
+# the tables it reports on. CockroachDB v24.3 hides rows in crdb_internal for
+# tables the user cannot read; later versions do not filter.
+
 name: tables
 enabled: true
 scope: cluster

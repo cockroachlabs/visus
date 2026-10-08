@@ -14,6 +14,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+# Privileges: beyond what "visus init" grants, reading system.namespace needs
+#   GRANT SYSTEM VIEWSYSTEMTABLE TO visus;
+
 # This query samples local ranges in a node.
 # It chooses ranges that have a replica that shows up as the first replica
 # in the crdb_internal.ranges_no_leases.
